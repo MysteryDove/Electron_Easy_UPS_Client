@@ -12,7 +12,7 @@
     "package:win": "electron-forge package --platform=win32 --arch=x64",
     "make": "npm run make:nsis:full",
     "make:forge": "electron-forge make",
-    "make:nsis": "electron-builder --prepackaged \"out/Easy UPS Client-win32-x64\" --win nsis --x64",
+    "make:nsis": "electron-builder --prepackaged \"out/Easy UPS Client-win32-x64\" --win nsis --x64 --publish never",
     "make:nsis:full": "npm run package:win && npm run make:nsis",
     "publish": "electron-forge publish",
     "lint": "eslint ."
