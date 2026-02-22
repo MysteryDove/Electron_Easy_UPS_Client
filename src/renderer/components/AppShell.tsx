@@ -3,12 +3,23 @@ import React, { useState } from 'react';
 import type { ReactNode } from 'react';
 import { useTranslation } from 'react-i18next';
 import { useConnection } from '../app/providers';
-import { LayoutDashboard, Activity, Settings, PanelLeftClose, PanelLeftOpen } from 'lucide-react';
+import {
+    LayoutDashboard,
+    Activity,
+    Settings,
+    CircleHelp,
+    PanelLeftClose,
+    PanelLeftOpen,
+} from 'lucide-react';
 
-const NAV_ITEMS = [
+const MAIN_NAV_ITEMS = [
     { to: '/dashboard', labelKey: 'appShell.navDashboard', icon: <LayoutDashboard size={20} /> },
     { to: '/telemetry', labelKey: 'appShell.navTelemetry', icon: <Activity size={20} /> },
     { to: '/settings', labelKey: 'appShell.navSettings', icon: <Settings size={20} /> },
+] as const;
+
+const FOOTER_NAV_ITEMS = [
+    { to: '/about', labelKey: 'appShell.navAbout', icon: <CircleHelp size={20} /> },
 ] as const;
 
 export function AppShell({ children }: { children: ReactNode }) {
@@ -31,7 +42,7 @@ export function AppShell({ children }: { children: ReactNode }) {
                 </div>
 
                 <nav className="sidebar-nav">
-                    {NAV_ITEMS.map((item) => (
+                    {MAIN_NAV_ITEMS.map((item) => (
                         <NavLink
                             key={item.to}
                             to={item.to}
@@ -47,6 +58,21 @@ export function AppShell({ children }: { children: ReactNode }) {
                 </nav>
 
                 <div className="sidebar-footer">
+                    <nav className="sidebar-footer-nav">
+                        {FOOTER_NAV_ITEMS.map((item) => (
+                            <NavLink
+                                key={item.to}
+                                to={item.to}
+                                className={({ isActive }) =>
+                                    `sidebar-link ${isActive ? 'sidebar-link--active' : ''}`
+                                }
+                                title={isCollapsed ? t(item.labelKey) : undefined}
+                            >
+                                <span className="sidebar-link-icon">{item.icon}</span>
+                                {!isCollapsed && <span className="sidebar-link-label">{t(item.labelKey)}</span>}
+                            </NavLink>
+                        ))}
+                    </nav>
                     <div className={`connection-badge connection-badge--${state}`} title={isCollapsed ? formatState(state, t) : undefined}>
                         <span className="connection-badge-dot" />
                         {!isCollapsed && <span className="connection-badge-label">{formatState(state, t)}</span>}

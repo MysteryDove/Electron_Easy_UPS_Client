@@ -11,6 +11,7 @@ import { SetupWizardPage } from '../pages/SetupWizardPage';
 import { DashboardPage } from '../pages/DashboardPage';
 import { TelemetryPage } from '../pages/TelemetryPage';
 import { SettingsPage } from '../pages/SettingsPage';
+import { AboutPage } from '../pages/AboutPage';
 import { ReconnectOverlay } from '../components/ReconnectOverlay';
 
 function WizardGuard() {
@@ -53,6 +54,7 @@ export function AppRoutes() {
                     <Route path="/dashboard" element={<DashboardPage />} />
                     <Route path="/telemetry" element={<TelemetryPage />} />
                     <Route path="/settings" element={<SettingsPage />} />
+                    <Route path="/about" element={<AboutPage />} />
                 </Route>
                 <Route path="*" element={<RootRedirect />} />
             </Routes>

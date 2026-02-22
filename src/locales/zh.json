@@ -143,6 +143,7 @@
         "navDashboard": "仪表板",
         "navTelemetry": "数据中心",
         "navSettings": "设置",
+        "navAbout": "关于",
         "expandSidebar": "展开侧边栏",
         "collapseSidebar": "收起侧边栏",
         "stateDisconnected": "已断开",
@@ -151,6 +152,19 @@
         "stateConnected": "已连接",
         "stateDegraded": "状态异常",
         "stateReconnecting": "正在重新连接..."
+    },
+    "about": {
+        "title": "关于",
+        "subtitle": "应用详情和项目信息",
+        "application": "应用",
+        "name": "名称",
+        "version": "版本",
+        "description": "描述",
+        "author": "作者",
+        "license": "许可证",
+        "builtWith": "Electron 版本",
+        "techStack": "技术栈",
+        "unknown": "未知"
     },
     "reconnect": {
         "title": "连接丢失",

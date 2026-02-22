@@ -143,6 +143,7 @@
         "navDashboard": "Dashboard",
         "navTelemetry": "Telemetry",
         "navSettings": "Settings",
+        "navAbout": "About",
         "expandSidebar": "Expand Sidebar",
         "collapseSidebar": "Collapse Sidebar",
         "stateDisconnected": "Disconnected",
@@ -151,6 +152,19 @@
         "stateConnected": "Connected",
         "stateDegraded": "Degraded",
         "stateReconnecting": "Reconnecting..."
+    },
+    "about": {
+        "title": "About",
+        "subtitle": "Application details and project information",
+        "application": "Application",
+        "name": "Name",
+        "version": "Version",
+        "description": "Description",
+        "author": "Author",
+        "license": "License",
+        "builtWith": "Built with Electron",
+        "techStack": "Technology Stack",
+        "unknown": "Unknown"
     },
     "reconnect": {
         "title": "Connection Lost",
