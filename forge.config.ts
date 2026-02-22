@@ -6,10 +6,12 @@ import { VitePlugin } from '@electron-forge/plugin-vite';
 import { AutoUnpackNativesPlugin } from '@electron-forge/plugin-auto-unpack-natives';
 import { FusesPlugin } from '@electron-forge/plugin-fuses';
 import { FuseV1Options, FuseVersion } from '@electron/fuses';
+import path from 'node:path';
 
 const config: ForgeConfig = {
   packagerConfig: {
     prune: true,
+    icon: path.resolve(__dirname, 'assets/icons/app-icon.ico'),
     asar: {
       unpack: '**/node_modules/@duckdb/node-bindings-win32-x64/*.dll',
     },

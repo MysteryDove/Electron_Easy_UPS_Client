@@ -67,9 +67,15 @@
     "directories": {
       "output": "out/nsis"
     },
+    "win": {
+      "icon": "assets/icons/app-icon.ico"
+    },
     "nsis": {
       "oneClick": false,
-      "allowToChangeInstallationDirectory": true
+      "allowToChangeInstallationDirectory": true,
+      "installerIcon": "assets/icons/app-icon.ico",
+      "uninstallerIcon": "assets/icons/app-icon.ico",
+      "installerHeaderIcon": "assets/icons/app-icon.ico"
     }
   }
 }

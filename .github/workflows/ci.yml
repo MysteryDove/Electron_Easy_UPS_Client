@@ -14,16 +14,22 @@ jobs:
   quality:
     name: Lint and type-check
     runs-on: ubuntu-latest
+    env:
+      NPM_CONFIG_CACHE: ${{ github.workspace }}/.npm-cache
 
     steps:
       - name: Checkout
         uses: actions/checkout@v4
+
+      - name: Ensure npm cache directory exists
+        run: mkdir -p "$NPM_CONFIG_CACHE"
 
       - name: Setup Node.js
         uses: actions/setup-node@v4
         with:
           node-version: 22
           cache: npm
+          cache-dependency-path: package-lock.json
 
       - name: Install dependencies
         run: npm ci
@@ -38,16 +44,23 @@ jobs:
     name: Build NSIS installer on Windows
     runs-on: windows-latest
     needs: quality
+    env:
+      NPM_CONFIG_CACHE: ${{ github.workspace }}\.npm-cache
 
     steps:
       - name: Checkout
         uses: actions/checkout@v4
+
+      - name: Ensure npm cache directory exists
+        shell: pwsh
+        run: New-Item -ItemType Directory -Force -Path $env:NPM_CONFIG_CACHE | Out-Null
 
       - name: Setup Node.js
         uses: actions/setup-node@v4
         with:
           node-version: 22
           cache: npm
+          cache-dependency-path: package-lock.json
 
       - name: Install dependencies
         run: npm ci

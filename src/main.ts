@@ -1,4 +1,5 @@
 import { app, BrowserWindow, dialog } from 'electron';
+import fs from 'node:fs';
 import path from 'node:path';
 import { bootstrapMainProcess } from './main/bootstrap/appBootstrap';
 
@@ -10,6 +11,20 @@ if (process.platform === 'win32') {
 
 let mainWindow: BrowserWindow | null = null;
 let isQuitting = false;
+
+function resolveWindowIconPath(): string | undefined {
+  if (app.isPackaged) {
+    return undefined;
+  }
+
+  const candidatePath = path.join(app.getAppPath(), 'assets/icons/app-icon.png');
+
+  if (fs.existsSync(candidatePath)) {
+    return candidatePath;
+  }
+
+  return undefined;
+}
 
 const createWindow = () => {
   if (mainWindow && !mainWindow.isDestroyed()) {
@@ -28,6 +43,7 @@ const createWindow = () => {
     minWidth: 1280,
     minHeight: 720,
     autoHideMenuBar: true,
+    icon: resolveWindowIconPath(),
     webPreferences: {
       preload: path.join(__dirname, 'preload.js'),
     },
@@ -91,4 +107,3 @@ app.on('window-all-closed', () => {
 app.on('activate', () => {
   createWindow();
 });
-
