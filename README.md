@@ -1,5 +1,7 @@
 # Easy UPS Client
 
+<img src="screenshot.png" width="600" alt="Screenshot">
+
 A modern desktop application for monitoring UPS systems via the NUT (Network UPS Tools) protocol.
 
 ## Overview
@@ -14,6 +16,9 @@ Easy UPS Client provides a user-friendly interface to monitor your UPS telemetry
 - **Configurable Shutdowns**: Set custom countdowns for system shutdown during power failure events.
 - **Multi-language Support**: Internationalization support via i18next.
 - **Modern UI**: Clean, responsive design built with Tailwind CSS and Lucide icons.
+- **System Icon Tray**: Minimizes to system tray for unobtrusive monitoring.
+- **Auto Shutdown**: Automatic system shutdown when battery levels become critical.
+- **Configurable Warning**: Customizable alerts and notifications for various UPS events.
 
 ## Technology Stack
 
