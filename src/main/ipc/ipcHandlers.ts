@@ -15,6 +15,7 @@ import type { BatterySafetyService } from '../system/batterySafetyService';
 import type { CriticalAlertWindow } from '../system/criticalAlertWindow';
 import type { LineAlertService } from '../system/lineAlertService';
 import { i18nService } from '../system/i18nService';
+import { applyStartWithWindowsSetting } from '../system/startupService';
 import type { TrayService } from '../system/trayService';
 import {
   IPC_CHANNELS,
@@ -46,6 +47,7 @@ export function registerIpcHandlers(dependencies: IpcHandlerDependencies): void 
   // Initialize nativeTheme from initial config
   const initialConfig = dependencies.configStore.get();
   nativeTheme.themeSource = initialConfig.theme?.mode ?? 'system';
+  applyStartWithWindowsSetting(initialConfig.startup.startWithWindows);
 
   nativeTheme.on('updated', () => {
     BrowserWindow.getAllWindows().forEach((win) => {
@@ -69,6 +71,7 @@ export function registerIpcHandlers(dependencies: IpcHandlerDependencies): void 
       if (updatedConfig.theme?.mode) {
         nativeTheme.themeSource = updatedConfig.theme.mode;
       }
+      applyStartWithWindowsSetting(updatedConfig.startup.startWithWindows);
 
       await dependencies.nutPollingService.handleConfigUpdated(
         previousConfig,

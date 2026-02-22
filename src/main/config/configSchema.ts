@@ -74,6 +74,12 @@ const debugConfigSchema = z
   })
   .strict();
 
+const startupConfigSchema = z
+  .object({
+    startWithWindows: z.boolean(),
+  })
+  .strict();
+
 const themeConfigSchema = z
   .object({
     mode: z.enum(['light', 'dark', 'system']),
@@ -118,6 +124,7 @@ export const appConfigSchema = z
     data: dataConfigSchema,
     battery: batteryConfigSchema,
     debug: debugConfigSchema,
+    startup: startupConfigSchema,
     theme: themeConfigSchema,
     i18n: i18nConfigSchema,
     dashboard: dashboardConfigSchema,
@@ -133,6 +140,7 @@ const appConfigPatchSchema = z
     data: dataConfigSchema.partial().optional(),
     battery: batteryConfigBaseSchema.partial().optional(),
     debug: debugConfigSchema.partial().optional(),
+    startup: startupConfigSchema.partial().optional(),
     theme: themeConfigSchema.partial().optional(),
     i18n: i18nConfigSchema.partial().optional(),
     dashboard: dashboardConfigSchema.partial().optional(),
@@ -185,6 +193,9 @@ export const defaultAppConfig: AppConfig = {
   debug: {
     level: 'info',
   },
+  startup: {
+    startWithWindows: false,
+  },
   theme: {
     mode: 'system',
   },
@@ -232,6 +243,9 @@ export function applyConfigPatch(
       ? { ...current.battery, ...patch.battery }
       : current.battery,
     debug: patch.debug ? { ...current.debug, ...patch.debug } : current.debug,
+    startup: patch.startup
+      ? { ...current.startup, ...patch.startup }
+      : current.startup,
     theme: patch.theme ? { ...current.theme, ...patch.theme } : current.theme,
     i18n: patch.i18n ? { ...current.i18n, ...patch.i18n } : current.i18n,
     dashboard: patch.dashboard

@@ -1,12 +1,6 @@
-import { app, BrowserWindow } from 'electron';
+import { app, BrowserWindow, dialog } from 'electron';
 import path from 'node:path';
-import started from 'electron-squirrel-startup';
 import { bootstrapMainProcess } from './main/bootstrap/appBootstrap';
-
-// Handle creating/removing shortcuts on Windows when installing/uninstalling.
-if (started) {
-  app.quit();
-}
 
 // Set app identity early so Windows toast notifications and taskbar show the correct name.
 app.name = 'Easy UPS Client';
@@ -72,6 +66,12 @@ app.on('ready', async () => {
     await bootstrapMainProcess();
   } catch (error) {
     console.error('[Main] bootstrap failed', error);
+    dialog.showErrorBox(
+      'Easy UPS Client startup failed',
+      error instanceof Error ? error.message : String(error),
+    );
+    app.quit();
+    return;
   }
 
   createWindow();
@@ -91,5 +91,4 @@ app.on('window-all-closed', () => {
 app.on('activate', () => {
   createWindow();
 });
-
 

@@ -64,9 +64,20 @@ To package the application for your current platform:
 npm run package
 ```
 
-To create distributables (e.g., installers):
+To create a Windows NSIS installer (`out/nsis/*.exe`):
 ```bash
 npm run make
+```
+
+To run the two steps manually:
+```bash
+npm run package:win
+npm run make:nsis
+```
+
+To use Electron Forge's default makers (zip/deb/rpm):
+```bash
+npm run make:forge
 ```
 
 ## Configuration

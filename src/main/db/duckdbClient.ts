@@ -1,27 +1,16 @@
 import { app } from 'electron';
 import fs from 'node:fs';
-import { createRequire } from 'node:module';
 import path from 'node:path';
 import type {
   DuckDBConnection as DuckDbConnectionType,
   DuckDBInstance as DuckDbInstanceType,
 } from '@duckdb/node-api';
+import { DuckDBInstance } from '@duckdb/node-api';
 import { TELEMETRY_COLUMNS } from '../nut/nutValueMapper';
 
 export const UPS_TELEMETRY_TABLE = 'ups_telemetry';
 
 export type DuckDbParam = string | number | null | Date;
-
-type DuckDbNodeApiModule = {
-  DuckDBInstance: {
-    create: (
-      path?: string,
-      options?: Record<string, string>,
-    ) => Promise<DuckDbInstanceType>;
-  };
-};
-
-const runtimeRequire = createRequire(__filename);
 
 export class DuckDbClient {
   private instance: DuckDbInstanceType | null = null;
@@ -40,7 +29,6 @@ export class DuckDbClient {
 
   public async initialize(): Promise<void> {
     await fs.promises.mkdir(path.dirname(this.dbFilePath), { recursive: true });
-    const { DuckDBInstance } = loadDuckDbNodeApi();
     const instance = await DuckDBInstance.create(this.dbFilePath);
     this.instance = instance;
     this.connection = await instance.connect();
@@ -109,10 +97,6 @@ export class DuckDbClient {
       }
     }
   }
-}
-
-function loadDuckDbNodeApi(): DuckDbNodeApiModule {
-  return runtimeRequire('@duckdb/node-api') as DuckDbNodeApiModule;
 }
 
 function toDuckDbParameterSql(sql: string): string {

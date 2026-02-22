@@ -128,6 +128,8 @@
         "shutdownDelay": "Shutdown Delay (sec)",
         "warningOverlay": "Warning-level critical overlay",
         "shutdownOverlay": "Shutdown-level critical overlay",
+        "startup": "Startup",
+        "startWithWindows": "Start with Windows",
         "appearance": "Appearance",
         "theme": "Theme",
         "saving": "Saving...",

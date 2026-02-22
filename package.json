@@ -9,7 +9,11 @@
     "start": "electron-forge start",
     "start:reset-settings": "set ELECTRON_UPS_RESET_SETTINGS_ON_START=1&& electron-forge start",
     "package": "electron-forge package",
-    "make": "electron-forge make",
+    "package:win": "electron-forge package --platform=win32 --arch=x64",
+    "make": "npm run make:nsis:full",
+    "make:forge": "electron-forge make",
+    "make:nsis": "electron-builder --prepackaged \"out/Easy UPS Client-win32-x64\" --win nsis --x64",
+    "make:nsis:full": "npm run package:win && npm run make:nsis",
     "publish": "electron-forge publish",
     "lint": "eslint ."
   },
@@ -18,24 +22,23 @@
     "name": "Owen Li",
     "email": "admin@iloli.ch"
   },
-  "license": "MIT",
+  "license": "GPL-2.0-only",
   "devDependencies": {
     "@electron-forge/cli": "^7.11.1",
     "@electron-forge/maker-deb": "^7.11.1",
     "@electron-forge/maker-rpm": "^7.11.1",
-    "@electron-forge/maker-squirrel": "^7.11.1",
     "@electron-forge/maker-zip": "^7.11.1",
     "@electron-forge/plugin-auto-unpack-natives": "^7.11.1",
     "@electron-forge/plugin-fuses": "^7.11.1",
     "@electron-forge/plugin-vite": "^7.11.1",
     "@electron/fuses": "^1.8.0",
-    "@types/electron-squirrel-startup": "^1.0.2",
     "@types/react": "^19.2.14",
     "@types/react-dom": "^19.2.3",
     "@typescript-eslint/eslint-plugin": "^8.56.0",
     "@typescript-eslint/parser": "^8.56.0",
     "@vitejs/plugin-react": "^5.1.4",
     "electron": "40.6.0",
+    "electron-builder": "^26.8.1",
     "eslint": "^9.31.0",
     "eslint-plugin-import": "^2.32.0",
     "typescript": "~5.9.3",
@@ -47,7 +50,6 @@
     "@tailwindcss/vite": "^4.2.0",
     "echarts": "^6.0.0",
     "echarts-for-react": "^3.0.6",
-    "electron-squirrel-startup": "^1.0.1",
     "electron-store": "^11.0.2",
     "i18next": "^25.8.13",
     "lucide-react": "^0.575.0",
@@ -58,5 +60,16 @@
     "tailwindcss": "^4.2.0",
     "tslib": "^2.8.1",
     "zod": "^4.3.6"
+  },
+  "build": {
+    "appId": "ch.iloli.easyupsclient",
+    "productName": "Easy UPS Client",
+    "directories": {
+      "output": "out/nsis"
+    },
+    "nsis": {
+      "oneClick": false,
+      "allowToChangeInstallationDirectory": true
+    }
   }
 }

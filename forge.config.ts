@@ -1,5 +1,4 @@
 import type { ForgeConfig } from '@electron-forge/shared-types';
-import { MakerSquirrel } from '@electron-forge/maker-squirrel';
 import { MakerZIP } from '@electron-forge/maker-zip';
 import { MakerDeb } from '@electron-forge/maker-deb';
 import { MakerRpm } from '@electron-forge/maker-rpm';
@@ -10,12 +9,26 @@ import { FuseV1Options, FuseVersion } from '@electron/fuses';
 
 const config: ForgeConfig = {
   packagerConfig: {
-    asar: true,
+    asar: {
+      unpack: '**/node_modules/@duckdb/node-bindings-win32-x64/*.dll',
+    },
+    ignore: (file: string) => {
+      if (!file) {
+        return false;
+      }
+
+      const normalizedPath = file.replace(/\\/g, '/');
+      const shouldKeep =
+        normalizedPath.startsWith('/.vite') ||
+        normalizedPath === '/package.json' ||
+        normalizedPath.startsWith('/node_modules');
+
+      return !shouldKeep;
+    },
   },
   rebuildConfig: {},
   makers: [
-    new MakerSquirrel({}),
-    new MakerZIP({}, ['darwin']),
+    new MakerZIP({}, ['darwin', 'win32']),
     new MakerRpm({}),
     new MakerDeb({}),
   ],

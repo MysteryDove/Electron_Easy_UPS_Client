@@ -40,6 +40,7 @@ export function SettingsPage() {
     const [lineAlertEnabled, setLineAlertEnabled] = useState(true);
     const [lineAlertCooldown, setLineAlertCooldown] = useState(5);
     const [locale, setLocale] = useState('system');
+    const [startWithWindows, setStartWithWindows] = useState(false);
 
     // Sync from config on load
     useEffect(() => {
@@ -69,6 +70,7 @@ export function SettingsPage() {
         setLineAlertEnabled(config.line.alertEnabled);
         setLineAlertCooldown(config.line.alertCooldownMinutes);
         setLocale(config.i18n.locale);
+        setStartWithWindows(config.startup.startWithWindows);
     }, [config]);
 
     const handleSave = useCallback(
@@ -121,6 +123,7 @@ export function SettingsPage() {
                         alertCooldownMinutes: lineAlertCooldown,
                     },
                     i18n: { locale },
+                    startup: { startWithWindows },
                 });
 
                 await refreshConfig();
@@ -161,6 +164,7 @@ export function SettingsPage() {
             lineAlertEnabled,
             lineAlertCooldown,
             locale,
+            startWithWindows,
             refreshConfig,
         ],
     );
@@ -486,6 +490,21 @@ export function SettingsPage() {
                             </label>
                         </div>
 
+                    </div>
+                </section>
+
+                {/* Startup */}
+                <section className="settings-section">
+                    <h2 className="settings-section-title">{t('settings.startup')}</h2>
+                    <div className="settings-section-body">
+                        <label className="form-toggle">
+                            <input
+                                type="checkbox"
+                                checked={startWithWindows}
+                                onChange={(e) => setStartWithWindows(e.target.checked)}
+                            />
+                            <span className="form-toggle-label">{t('settings.startWithWindows')}</span>
+                        </label>
                     </div>
                 </section>
 

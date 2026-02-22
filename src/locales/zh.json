@@ -128,6 +128,8 @@
         "shutdownDelay": "关机延迟时间 (秒)",
         "warningOverlay": "启用全屏警告提示",
         "shutdownOverlay": "启用全屏关机提示",
+        "startup": "启动",
+        "startWithWindows": "随 Windows 启动",
         "appearance": "外观",
         "theme": "主题",
         "saving": "保存中...",
