@@ -9,6 +9,7 @@ import { FuseV1Options, FuseVersion } from '@electron/fuses';
 
 const config: ForgeConfig = {
   packagerConfig: {
+    prune: true,
     asar: {
       unpack: '**/node_modules/@duckdb/node-bindings-win32-x64/*.dll',
     },
@@ -18,10 +19,12 @@ const config: ForgeConfig = {
       }
 
       const normalizedPath = file.replace(/\\/g, '/');
+      const isNodeModules = normalizedPath.startsWith('/node_modules');
+      const isNodeModulesViteCache = normalizedPath.startsWith('/node_modules/.vite');
       const shouldKeep =
         normalizedPath.startsWith('/.vite') ||
         normalizedPath === '/package.json' ||
-        normalizedPath.startsWith('/node_modules');
+        (isNodeModules && !isNodeModulesViteCache);
 
       return !shouldKeep;
     },
