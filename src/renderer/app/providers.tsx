@@ -93,14 +93,30 @@ export function AppProviders({ children }: { children: ReactNode }) {
     useEffect(() => {
         const unsubs: Array<() => void> = [];
 
-        // Fetch initial state first
-        // eslint-disable-next-line @typescript-eslint/no-explicit-any
-        window.electronApi?.nut?.getState().then((res: any) => {
-            setConnectionState(res.state);
-            setStaticData(res.staticData);
-        }).catch(() => {
-            // ignore error
-        });
+        const bootstrapConnectionState = async () => {
+            try {
+                const [stateResult, latestTelemetryResult] = await Promise.all([
+                    window.electronApi?.nut?.getState(),
+                    window.electronApi?.telemetry?.getLatest?.(),
+                ]);
+
+                if (stateResult) {
+                    setConnectionState(stateResult.state);
+                    setStaticData(stateResult.staticData);
+                }
+
+                if (latestTelemetryResult) {
+                    setLastTelemetry({
+                        ts: latestTelemetryResult.ts,
+                        values: latestTelemetryResult.values,
+                    });
+                }
+            } catch {
+                // ignore error
+            }
+        };
+
+        void bootstrapConnectionState();
 
         if (window.electronApi?.events?.onConnectionStateChanged) {
             unsubs.push(

@@ -97,6 +97,10 @@ export function registerIpcHandlers(dependencies: IpcHandlerDependencies): void 
     dependencies.telemetryRepository.getAvailableColumns(),
   );
 
+  ipcMain.handle(IPC_CHANNELS.telemetryGetLatest, async () =>
+    dependencies.telemetryRepository.getLatestTelemetryPoint(),
+  );
+
   ipcMain.handle(
     IPC_CHANNELS.telemetryQueryRange,
     async (_event, payload: unknown) =>

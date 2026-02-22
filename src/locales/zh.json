@@ -34,6 +34,7 @@
     "dashboard": {
         "title": "仪表板",
         "lastUpdate": "最后更新: {{time}}",
+        "waitingTelemetry": "正在等待数据...",
         "statusOnline": "在线 (市电供电)",
         "statusBattery": "电池供电",
         "statusUnknown": "未知状态",

@@ -23,6 +23,8 @@ const electronApi = {
   telemetry: {
     getAvailableColumns: (): Promise<TelemetryColumn[]> =>
       ipcRenderer.invoke(IPC_CHANNELS.telemetryGetAvailableColumns),
+    getLatest: (): Promise<TelemetryDataPoint | null> =>
+      ipcRenderer.invoke(IPC_CHANNELS.telemetryGetLatest),
     queryRange: (payload: QueryRangePayload): Promise<TelemetryDataPoint[]> =>
       ipcRenderer.invoke(IPC_CHANNELS.telemetryQueryRange, payload),
     getMinMaxForRange: (payload: { startIso: string; endIso: string }): Promise<Record<string, { min: number | null; max: number | null }>> =>

@@ -35,7 +35,7 @@ jobs:
         run: npx tsc --noEmit
 
   package-windows:
-    name: Package on Windows
+    name: Build distributables on Windows
     runs-on: windows-latest
     needs: quality
 
@@ -52,14 +52,14 @@ jobs:
       - name: Install dependencies
         run: npm ci
 
-      - name: Package app
-        run: npm run package
+      - name: Build installers
+        run: npm run make
 
-      - name: Upload package output
+      - name: Upload distributables
         if: success()
         uses: actions/upload-artifact@v4
         with:
-          name: electron-package-windows
-          path: out/
+          name: electron-make-windows
+          path: out/make/
           if-no-files-found: warn
           retention-days: 7

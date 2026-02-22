@@ -6,6 +6,7 @@ export const IPC_CHANNELS = {
   settingsGet: 'settings:get',
   settingsUpdate: 'settings:update',
   telemetryGetAvailableColumns: 'telemetry:get-available-columns',
+  telemetryGetLatest: 'telemetry:get-latest',
   telemetryQueryRange: 'telemetry:query-range',
   telemetryGetMinMaxForRange: 'telemetry:get-minmax-for-range',
   wizardTestConnection: 'wizard:test-connection',
@@ -58,6 +59,10 @@ export type RendererInvokeMap = {
   [IPC_CHANNELS.telemetryGetAvailableColumns]: {
     request: void;
     response: TelemetryColumn[];
+  };
+  [IPC_CHANNELS.telemetryGetLatest]: {
+    request: void;
+    response: TelemetryDataPoint | null;
   };
   [IPC_CHANNELS.telemetryQueryRange]: {
     request: QueryRangePayload;

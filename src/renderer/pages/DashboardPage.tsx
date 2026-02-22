@@ -157,6 +157,12 @@ export function DashboardPage() {
                 )}
             </header>
 
+            {!lastTelemetry && (
+                <div className="page-loading">
+                    <span className="page-subtitle">{t('dashboard.waitingTelemetry')}</span>
+                </div>
+            )}
+
             {/* UPS Status Banner */}
             {lastTelemetry && (() => {
                 const statusVal = lastTelemetry.values.ups_status_num as number | null | undefined;
