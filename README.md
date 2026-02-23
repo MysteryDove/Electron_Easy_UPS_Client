@@ -2,23 +2,18 @@
 
 <img src="screenshot.png" width="600" alt="Screenshot">
 
-A modern desktop application for monitoring UPS systems via the NUT (Network UPS Tools) protocol.
-
-## Overview
-
-Easy UPS Client provides a user-friendly interface to monitor your UPS telemetry, and ensure your system is protected during power events. Built with Electron and React, it does have cross-platform capability but for now it's only for windows.
+A modern desktop application for monitoring UPS systems via the NUT (Network UPS Tools) protocol. For now it focuses on SNMP UPS devices using nut, and also brings modern UI with standard warning and auto shutdown features. 
 
 ## Key Features
 
 - **Real-time Monitoring**: Track voltage, load, battery level, and other critical UPS telemetry.
 - **Visualized Data**: Sparkline charts for historical telemetry trends using eCharts and DuckDB.
-- **Setup Wizard**: Easy step-by-step configuration for initial NUT connection.
 - **Configurable Shutdowns**: Set custom countdowns for system shutdown during power failure events.
 - **Multi-language Support**: Internationalization support via i18next.
 - **Modern UI**: Clean, responsive design built with Tailwind CSS and Lucide icons.
-- **System Icon Tray**: Minimizes to system tray for unobtrusive monitoring.
-- **Auto Shutdown**: Automatic system shutdown when battery levels become critical.
-- **Configurable Warning**: Customizable alerts and notifications for various UPS events.
+- **System Icon Tray**: Minimizes to system tray with updated battery icons.
+- **Configurable Warning/Auto Shutdown**: Automatic system shutdown/Full Screen Warning when battery levels become critical.
+- **Basic NUT for Windows Configuration Helper**: Helps users set up a local NUT instance on Windows to monitor SNMP UPS devices, including writing configuration files and starting necessary services.
 
 ## Technology Stack
 
