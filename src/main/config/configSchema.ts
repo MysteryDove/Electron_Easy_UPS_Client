@@ -18,6 +18,8 @@ const nutConfigSchema = z
     password: z.string().trim().min(1).optional(),
     upsName: z.string().trim().min(1),
     mapping: z.record(z.string(), z.string()).optional(),
+    launchLocalComponents: z.boolean().optional(),
+    localNutFolderPath: z.string().trim().min(1).optional(),
   })
   .strict();
 
@@ -158,6 +160,7 @@ export const defaultAppConfig: AppConfig = {
     host: '127.0.0.1',
     port: 3493,
     upsName: 'snmpups',
+    launchLocalComponents: false,
     mapping: {
       battery_voltage: 'battery.voltage',
       battery_charge_pct: 'battery.charge',

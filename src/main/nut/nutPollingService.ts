@@ -1,4 +1,12 @@
 import { BrowserWindow } from 'electron';
+import {
+  execFile,
+  spawn,
+  type ChildProcess,
+} from 'node:child_process';
+import fs from 'node:fs/promises';
+import path from 'node:path';
+import { promisify } from 'node:util';
 import type { AppConfig, DebugLogLevel } from '../config/configSchema';
 import type { ConfigStore } from '../config/configStore';
 import type {
@@ -12,6 +20,13 @@ import { NutClient } from './nutClient';
 
 const INITIAL_RECONNECT_DELAY_MS = 1000;
 const MAX_RECONNECT_DELAY_MS = 30000;
+const LOCAL_DRIVER_START_DELAY_MS = 1200;
+const LOCAL_UPSD_START_DELAY_MS = 1000;
+const LOCAL_DRIVER_RELATIVE_PATH_CANDIDATES = [
+  'bin/snmp-ups.exe',
+  'sbin/snmp-ups.exe',
+];
+const execFileAsync = promisify(execFile);
 const LOG_LEVEL_PRIORITY: Record<DebugLogLevel, number> = {
   off: 0,
   error: 1,
@@ -30,6 +45,11 @@ type NutTelemetryUpdatedListener = (
   payload: NutTelemetryUpdatedPayload,
 ) => void;
 
+type ExistingLocalNutProcessIds = {
+  driverPids: number[];
+  upsdPids: number[];
+};
+
 export class NutPollingService {
   private readonly configStore: ConfigStore;
   private readonly telemetryRepository: TelemetryRepository;
@@ -43,6 +63,8 @@ export class NutPollingService {
   private reconnectAttempt = 0;
   private started = false;
   private pollInFlight = false;
+  private localDriverProcess: ChildProcess | null = null;
+  private localUpsdProcess: ChildProcess | null = null;
   private availableFields: Set<string> = new Set();
   private staticFields: Set<string> = new Set();
   private dynamicFields: Set<string> = new Set();
@@ -69,7 +91,36 @@ export class NutPollingService {
     this.clearPollTimer();
     this.clearReconnectTimer();
     await this.nutClient.close();
+    await this.stopLocalNutProcesses({ forceManagedChildren: true });
     this.setState('idle');
+  }
+
+  public async startLocalComponentsForWizard(
+    folderPath: string,
+    upsName: string,
+  ): Promise<void> {
+    const normalizedFolderPath = folderPath.trim();
+    if (!normalizedFolderPath) {
+      throw new Error('folderPath is required');
+    }
+
+    const normalizedUpsName = upsName.trim();
+    if (!normalizedUpsName) {
+      throw new Error('upsName is required');
+    }
+
+    const baseConfig = this.configStore.get();
+    const wizardLocalConfig: AppConfig = {
+      ...baseConfig,
+      nut: {
+        ...baseConfig.nut,
+        upsName: normalizedUpsName,
+        launchLocalComponents: true,
+        localNutFolderPath: normalizedFolderPath,
+      },
+    };
+
+    await this.startLocalNutProcessesIfNeeded(wizardLocalConfig);
   }
 
   public getState(): ConnectionState {
@@ -133,6 +184,7 @@ export class NutPollingService {
   private async reconnectNow(): Promise<void> {
     this.clearPollTimer();
     this.clearReconnectTimer();
+    await this.stopLocalNutProcesses({ forceManagedChildren: true });
     await this.nutClient.close();
     this.reconnectAttempt = 0;
     this.setState('reconnecting');
@@ -148,6 +200,7 @@ export class NutPollingService {
       const config = this.configStore.get();
       this.debugLogLevel = config.debug.level;
       this.setState('connecting');
+      await this.startLocalNutProcessesIfNeeded(config);
 
       await this.nutClient.connect({
         host: config.nut.host,
@@ -194,6 +247,146 @@ export class NutPollingService {
     } catch (error) {
       await this.handleConnectionFailure(error);
     }
+  }
+
+  private async startLocalNutProcessesIfNeeded(config: AppConfig): Promise<void> {
+    if (!config.nut.launchLocalComponents) {
+      await this.stopLocalNutProcesses();
+      return;
+    }
+
+    if (
+      this.localDriverProcess &&
+      this.localDriverProcess.exitCode === null &&
+      this.localUpsdProcess &&
+      this.localUpsdProcess.exitCode === null
+    ) {
+      return;
+    }
+
+    await this.stopLocalNutProcesses();
+
+    const folderPath = config.nut.localNutFolderPath?.trim();
+    if (!folderPath) {
+      throw new Error(
+        'localNutFolderPath is required when launchLocalComponents is enabled',
+      );
+    }
+
+    const driverPath = await this.resolveLocalDriverPath(folderPath);
+    const upsdPath = path.join(folderPath, 'sbin', 'upsd.exe');
+    await assertFileExists(upsdPath, 'upsd.exe');
+
+    const existingProcesses = await findExistingLocalNutProcessIds(
+      driverPath,
+      upsdPath,
+    );
+
+    if (existingProcesses.driverPids.length > 0) {
+      this.log('warn', 'Reusing existing local snmp-ups process', {
+        driverPath,
+        pids: existingProcesses.driverPids,
+      });
+    } else {
+      this.log('info', 'Starting local snmp-ups process', {
+        driverPath,
+        upsName: config.nut.upsName,
+      });
+
+      const driverProcess = spawn(driverPath, ['-a', config.nut.upsName], {
+        cwd: folderPath,
+        windowsHide: true,
+        stdio: 'ignore',
+      });
+      this.localDriverProcess = driverProcess;
+      this.attachLocalProcessHandlers(driverProcess, 'snmp-ups');
+
+      await sleep(LOCAL_DRIVER_START_DELAY_MS);
+      if (driverProcess.exitCode !== null) {
+        throw new Error(`snmp-ups exited early with code ${driverProcess.exitCode}`);
+      }
+    }
+
+    if (existingProcesses.upsdPids.length > 0) {
+      this.log('warn', 'Reusing existing local upsd process', {
+        upsdPath,
+        pids: existingProcesses.upsdPids,
+      });
+      return;
+    }
+
+    this.log('info', 'Starting local upsd process', { upsdPath });
+    const upsdProcess = spawn(upsdPath, [], {
+      cwd: folderPath,
+      windowsHide: true,
+      stdio: 'ignore',
+    });
+    this.localUpsdProcess = upsdProcess;
+    this.attachLocalProcessHandlers(upsdProcess, 'upsd');
+
+    await sleep(LOCAL_UPSD_START_DELAY_MS);
+    if (upsdProcess.exitCode !== null) {
+      throw new Error(`upsd exited early with code ${upsdProcess.exitCode}`);
+    }
+  }
+
+  private async stopLocalNutProcesses(
+    options?: {
+      forceManagedChildren?: boolean;
+    },
+  ): Promise<void> {
+    const shouldTerminate = Boolean(
+      options?.forceManagedChildren ||
+      this.configStore.get().nut.launchLocalComponents,
+    );
+    const upsd = this.localUpsdProcess;
+    const driver = this.localDriverProcess;
+    this.localUpsdProcess = null;
+    this.localDriverProcess = null;
+
+    if (!shouldTerminate) {
+      this.log(
+        'debug',
+        'Skipping local NUT process termination because launchLocalComponents is disabled',
+      );
+      return;
+    }
+
+    await Promise.all([
+      terminateChildProcess(upsd),
+      terminateChildProcess(driver),
+    ]);
+  }
+
+  private async resolveLocalDriverPath(folderPath: string): Promise<string> {
+    for (const relativePath of LOCAL_DRIVER_RELATIVE_PATH_CANDIDATES) {
+      const fullPath = path.join(folderPath, relativePath);
+      if (await fileExists(fullPath)) {
+        return fullPath;
+      }
+    }
+
+    throw new Error(
+      `snmp-ups.exe not found in ${LOCAL_DRIVER_RELATIVE_PATH_CANDIDATES.join(' or ')}`,
+    );
+  }
+
+  private attachLocalProcessHandlers(
+    processRef: ChildProcess,
+    processName: 'snmp-ups' | 'upsd',
+  ): void {
+    processRef.on('error', (error) => {
+      this.log('error', `${processName} process error`, error);
+    });
+    processRef.on('exit', (code, signal) => {
+      this.log('warn', `${processName} process exited`, { code, signal });
+      if (processName === 'snmp-ups' && this.localDriverProcess === processRef) {
+        this.localDriverProcess = null;
+      }
+      if (processName === 'upsd' && this.localUpsdProcess === processRef) {
+        this.localUpsdProcess = null;
+      }
+    });
   }
 
   private startPollingTimer(intervalMs: number): void {
@@ -458,6 +651,160 @@ function hasNutConnectionConfigChanged(
     previousConfig.nut.port !== nextConfig.nut.port ||
     previousConfig.nut.upsName !== nextConfig.nut.upsName ||
     previousConfig.nut.username !== nextConfig.nut.username ||
-    previousConfig.nut.password !== nextConfig.nut.password
+    previousConfig.nut.password !== nextConfig.nut.password ||
+    previousConfig.nut.launchLocalComponents !==
+    nextConfig.nut.launchLocalComponents ||
+    previousConfig.nut.localNutFolderPath !== nextConfig.nut.localNutFolderPath
   );
+}
+
+async function terminateChildProcess(processRef: ChildProcess | null): Promise<void> {
+  if (!processRef || processRef.killed || processRef.exitCode !== null) {
+    return;
+  }
+
+  const pid = processRef.pid;
+  if (!pid) {
+    return;
+  }
+
+  await terminateProcessByPid(pid);
+}
+
+async function terminateProcessByPid(pid: number): Promise<void> {
+  if (!Number.isInteger(pid) || pid <= 0) {
+    return;
+  }
+
+  if (process.platform === 'win32') {
+    await execFileAsync('taskkill', ['/PID', String(pid), '/T', '/F']).catch(
+      () => {
+        // Ignore termination failures; process may have already exited.
+      },
+    );
+    return;
+  }
+
+  try {
+    process.kill(pid, 'SIGTERM');
+  } catch {
+    // Ignore termination failures; process may have already exited.
+  }
+}
+
+async function findExistingLocalNutProcessIds(
+  driverPath: string,
+  upsdPath: string,
+): Promise<ExistingLocalNutProcessIds> {
+  if (process.platform !== 'win32') {
+    return { driverPids: [], upsdPids: [] };
+  }
+
+  const [driverPids, upsdPids] = await Promise.all([
+    findWindowsProcessPidsByExecutablePath(driverPath),
+    findWindowsProcessPidsByExecutablePath(upsdPath),
+  ]);
+
+  return {
+    driverPids,
+    upsdPids,
+  };
+}
+
+async function findWindowsProcessPidsByExecutablePath(
+  executablePath: string,
+  commandLineContains?: string,
+): Promise<number[]> {
+  const escapedPath = escapeForSingleQuotedPowerShell(executablePath);
+  const commandFilter = commandLineContains?.trim();
+  const scriptParts = [
+    '$ErrorActionPreference = "Stop"',
+    `$targetPath = '${escapedPath}'`,
+    '$processes = @(Get-CimInstance Win32_Process | Where-Object {',
+    '  $_.ExecutablePath -and $_.ExecutablePath.Equals($targetPath, [System.StringComparison]::OrdinalIgnoreCase)',
+    '})',
+  ];
+
+  if (commandFilter) {
+    const escapedCommandFilter = escapeForSingleQuotedPowerShell(commandFilter);
+    scriptParts.push(
+      `$commandFilter = '${escapedCommandFilter}'`,
+      '$processes = @($processes | Where-Object {',
+      '  $_.CommandLine -and $_.CommandLine.IndexOf($commandFilter, [System.StringComparison]::OrdinalIgnoreCase) -ge 0',
+      '})',
+    );
+  }
+
+  scriptParts.push(
+    '$pids = @($processes | ForEach-Object { [int]$_.ProcessId })',
+    '$pids | ConvertTo-Json -Compress',
+  );
+
+  try {
+    const { stdout } = await execFileAsync(
+      'powershell.exe',
+      [
+        '-NoProfile',
+        '-ExecutionPolicy',
+        'Bypass',
+        '-Command',
+        scriptParts.join('; '),
+      ],
+      { windowsHide: true },
+    );
+
+    return parseProcessIdList(stdout);
+  } catch (error) {
+    console.warn('[NutPollingService] Failed to inspect running local NUT processes', error);
+    return [];
+  }
+}
+
+function parseProcessIdList(stdout: string): number[] {
+  const trimmed = stdout.trim();
+  if (!trimmed) {
+    return [];
+  }
+
+  try {
+    const parsed = JSON.parse(trimmed) as unknown;
+    if (Array.isArray(parsed)) {
+      return parsed.filter((entry): entry is number => (
+        typeof entry === 'number' &&
+        Number.isInteger(entry) &&
+        entry > 0
+      ));
+    }
+
+    if (typeof parsed === 'number' && Number.isInteger(parsed) && parsed > 0) {
+      return [parsed];
+    }
+  } catch {
+    // Ignore parse failures and return an empty list.
+  }
+
+  return [];
+}
+
+function escapeForSingleQuotedPowerShell(value: string): string {
+  return value.replace(/'/g, "''");
+}
+
+async function fileExists(targetPath: string): Promise<boolean> {
+  try {
+    const stat = await fs.stat(targetPath);
+    return stat.isFile();
+  } catch {
+    return false;
+  }
+}
+
+async function assertFileExists(targetPath: string, name: string): Promise<void> {
+  if (!(await fileExists(targetPath))) {
+    throw new Error(`${name} not found: ${targetPath}`);
+  }
+}
+
+function sleep(ms: number): Promise<void> {
+  return new Promise((resolve) => setTimeout(resolve, ms));
 }

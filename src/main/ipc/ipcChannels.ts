@@ -11,6 +11,9 @@ export const IPC_CHANNELS = {
   telemetryGetMinMaxForRange: 'telemetry:get-minmax-for-range',
   wizardTestConnection: 'wizard:test-connection',
   wizardComplete: 'wizard:complete',
+  nutSetupChooseFolder: 'nut-setup:choose-folder',
+  nutSetupValidateFolder: 'nut-setup:validate-folder',
+  nutSetupPrepareLocalNut: 'nut-setup:prepare-local-nut',
   nutGetState: 'nut:get-state',
   criticalAlertTest: 'critical-alert:test',
 } as const;
@@ -45,6 +48,44 @@ export type WizardCompletePayload = {
   upsName: string;
   mapping?: Record<string, string>;
   line?: { nominalVoltage: number; nominalFrequency: number };
+  launchLocalComponents?: boolean;
+  localNutFolderPath?: string;
+};
+
+export type NutSetupChooseFolderResult = {
+  cancelled: boolean;
+  folderPath?: string;
+};
+
+export type NutSetupValidateFolderPayload = {
+  folderPath: string;
+};
+
+export type NutSetupValidateFolderResult = {
+  valid: boolean;
+  missing: string[];
+  writable: boolean;
+};
+
+export type NutSetupPrepareLocalNutPayload = {
+  folderPath: string;
+  upsName: string;
+  port: string;
+  snmpVersion: 'v1' | 'v2c' | 'v3';
+  mibs: string;
+  community: string;
+  pollfreq: number;
+  secLevel?: 'noAuthNoPriv' | 'authNoPriv' | 'authPriv';
+  secName?: string;
+  authProtocol?: 'MD5' | 'SHA';
+  authPassword?: string;
+  privProtocol?: 'DES' | 'AES';
+  privPassword?: string;
+};
+
+export type NutSetupPrepareLocalNutResult = {
+  success: boolean;
+  error?: string;
 };
 
 export type RendererInvokeMap = {
@@ -68,6 +109,10 @@ export type RendererInvokeMap = {
     request: QueryRangePayload;
     response: TelemetryDataPoint[];
   };
+  [IPC_CHANNELS.telemetryGetMinMaxForRange]: {
+    request: { startIso: string; endIso: string };
+    response: Record<string, { min: number | null; max: number | null }>;
+  };
   [IPC_CHANNELS.wizardTestConnection]: {
     request: WizardTestConnectionPayload;
     response: WizardTestConnectionResult;
@@ -75,6 +120,18 @@ export type RendererInvokeMap = {
   [IPC_CHANNELS.wizardComplete]: {
     request: WizardCompletePayload;
     response: AppConfig;
+  };
+  [IPC_CHANNELS.nutSetupChooseFolder]: {
+    request: void;
+    response: NutSetupChooseFolderResult;
+  };
+  [IPC_CHANNELS.nutSetupValidateFolder]: {
+    request: NutSetupValidateFolderPayload;
+    response: NutSetupValidateFolderResult;
+  };
+  [IPC_CHANNELS.nutSetupPrepareLocalNut]: {
+    request: NutSetupPrepareLocalNutPayload;
+    response: NutSetupPrepareLocalNutResult;
   };
   [IPC_CHANNELS.nutGetState]: {
     request: void;

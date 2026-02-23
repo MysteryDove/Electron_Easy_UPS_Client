@@ -1,4 +1,4 @@
-import { ipcMain, nativeTheme, BrowserWindow } from 'electron';
+import { ipcMain, nativeTheme, BrowserWindow, dialog } from 'electron';
 import type { ConfigStore } from '../config/configStore';
 import type { RetentionService } from '../db/retentionService';
 import type {
@@ -18,11 +18,17 @@ import { i18nService } from '../system/i18nService';
 import { applyStartWithWindowsSetting } from '../system/startupService';
 import type { TrayService } from '../system/trayService';
 import {
+  prepareLocalNut,
+  validateNutFolder,
+} from '../nut/nutSetupService';
+import {
   IPC_CHANNELS,
   IPC_EVENTS,
   type WizardTestConnectionPayload,
   type WizardTestConnectionResult,
   type WizardCompletePayload,
+  type NutSetupValidateFolderPayload,
+  type NutSetupPrepareLocalNutPayload,
 } from './ipcChannels';
 
 let isRegistered = false;
@@ -141,6 +147,53 @@ export function registerIpcHandlers(dependencies: IpcHandlerDependencies): void 
       ),
   );
 
+  ipcMain.handle(IPC_CHANNELS.nutSetupChooseFolder, async () => {
+    const activeWindow = BrowserWindow.getFocusedWindow() ?? undefined;
+    const result = await dialog.showOpenDialog(activeWindow, {
+      title: 'Select extracted NUT folder',
+      properties: ['openDirectory'],
+    });
+
+    if (result.canceled || result.filePaths.length === 0) {
+      return { cancelled: true };
+    }
+
+    return {
+      cancelled: false,
+      folderPath: result.filePaths[0],
+    };
+  });
+
+  ipcMain.handle(
+    IPC_CHANNELS.nutSetupValidateFolder,
+    async (_event, payload: unknown) =>
+      validateNutFolder(normalizeNutSetupValidatePayload(payload).folderPath),
+  );
+
+  ipcMain.handle(
+    IPC_CHANNELS.nutSetupPrepareLocalNut,
+    async (_event, payload: unknown) => {
+      const normalizedPayload = normalizeNutSetupPreparePayload(payload);
+      const prepareResult = await prepareLocalNut(normalizedPayload);
+      if (!prepareResult.success) {
+        return prepareResult;
+      }
+
+      try {
+        await dependencies.nutPollingService.startLocalComponentsForWizard(
+          normalizedPayload.folderPath,
+          normalizedPayload.upsName,
+        );
+        return prepareResult;
+      } catch (error) {
+        return {
+          success: false,
+          error: error instanceof Error ? error.message : String(error),
+        };
+      }
+    },
+  );
+
   isRegistered = true;
 }
 
@@ -238,6 +291,8 @@ async function handleWizardComplete(
       password: payload.password,
       upsName: payload.upsName,
       mapping: payload.mapping,
+      launchLocalComponents: payload.launchLocalComponents,
+      localNutFolderPath: payload.localNutFolderPath,
     },
     wizard: { completed: true },
     line: payload.line,
@@ -296,6 +351,23 @@ function normalizeWizardCompletePayload(
     result.mapping = candidate.mapping as Record<string, string>;
   }
 
+  if (candidate.launchLocalComponents !== undefined) {
+    if (typeof candidate.launchLocalComponents !== 'boolean') {
+      throw new Error('launchLocalComponents must be a boolean');
+    }
+    result.launchLocalComponents = candidate.launchLocalComponents;
+  }
+
+  if (candidate.localNutFolderPath !== undefined) {
+    if (
+      typeof candidate.localNutFolderPath !== 'string' ||
+      !candidate.localNutFolderPath.trim()
+    ) {
+      throw new Error('localNutFolderPath must be a non-empty string');
+    }
+    result.localNutFolderPath = candidate.localNutFolderPath;
+  }
+
   if (candidate.line !== undefined) {
     const lineObj = candidate.line as Record<string, unknown>;
     if (
@@ -309,6 +381,96 @@ function normalizeWizardCompletePayload(
         nominalFrequency: lineObj.nominalFrequency,
       };
     }
+  }
+
+  return result;
+}
+
+function normalizeNutSetupValidatePayload(
+  payload: unknown,
+): NutSetupValidateFolderPayload {
+  if (typeof payload !== 'object' || payload === null) {
+    throw new Error('NUT setup validate payload must be an object');
+  }
+
+  const candidate = payload as { folderPath?: unknown };
+  if (typeof candidate.folderPath !== 'string' || !candidate.folderPath.trim()) {
+    throw new Error('folderPath is required');
+  }
+
+  return { folderPath: candidate.folderPath };
+}
+
+function normalizeNutSetupPreparePayload(
+  payload: unknown,
+): NutSetupPrepareLocalNutPayload {
+  if (typeof payload !== 'object' || payload === null) {
+    throw new Error('NUT setup prepare payload must be an object');
+  }
+
+  const candidate = payload as Record<string, unknown>;
+  const requiredStringFields: Array<keyof NutSetupPrepareLocalNutPayload> = [
+    'folderPath',
+    'upsName',
+    'port',
+    'mibs',
+    'community',
+  ];
+
+  for (const field of requiredStringFields) {
+    if (typeof candidate[field] !== 'string' || !(candidate[field] as string).trim()) {
+      throw new Error(`${field} is required`);
+    }
+  }
+
+  if (
+    candidate.snmpVersion !== 'v1' &&
+    candidate.snmpVersion !== 'v2c' &&
+    candidate.snmpVersion !== 'v3'
+  ) {
+    throw new Error('snmpVersion must be v1, v2c, or v3');
+  }
+
+  if (typeof candidate.pollfreq !== 'number') {
+    throw new Error('pollfreq is required');
+  }
+
+  const result: NutSetupPrepareLocalNutPayload = {
+    folderPath: candidate.folderPath as string,
+    upsName: candidate.upsName as string,
+    port: candidate.port as string,
+    snmpVersion: candidate.snmpVersion,
+    mibs: candidate.mibs as string,
+    community: candidate.community as string,
+    pollfreq: candidate.pollfreq,
+  };
+
+  if (
+    candidate.secLevel === 'noAuthNoPriv' ||
+    candidate.secLevel === 'authNoPriv' ||
+    candidate.secLevel === 'authPriv'
+  ) {
+    result.secLevel = candidate.secLevel;
+  }
+
+  if (typeof candidate.secName === 'string') {
+    result.secName = candidate.secName;
+  }
+
+  if (candidate.authProtocol === 'MD5' || candidate.authProtocol === 'SHA') {
+    result.authProtocol = candidate.authProtocol;
+  }
+
+  if (typeof candidate.authPassword === 'string') {
+    result.authPassword = candidate.authPassword;
+  }
+
+  if (candidate.privProtocol === 'DES' || candidate.privProtocol === 'AES') {
+    result.privProtocol = candidate.privProtocol;
+  }
+
+  if (typeof candidate.privPassword === 'string') {
+    result.privPassword = candidate.privPassword;
   }
 
   return result;

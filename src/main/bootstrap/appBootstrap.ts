@@ -87,13 +87,49 @@ async function initializeRuntime(): Promise<MainProcessRuntime> {
     nutPollingService.start();
   }
 
-  app.once('before-quit', () => {
+  let shutdownInProgress = false;
+  let shutdownCompleted = false;
+
+  app.on('before-quit', (event) => {
+    if (shutdownCompleted) {
+      return;
+    }
+
+    event.preventDefault();
+
+    if (shutdownInProgress) {
+      return;
+    }
+
+    shutdownInProgress = true;
     unsubscribeTelemetryListener();
     unsubscribeConnectionListener();
     trayService.stop();
     retentionService.stop();
-    void nutPollingService.stop();
-    void duckDbClient.close();
+
+    void (async () => {
+      const [nutStopResult, duckDbCloseResult] = await Promise.allSettled([
+        nutPollingService.stop(),
+        duckDbClient.close(),
+      ]);
+
+      if (nutStopResult.status === 'rejected') {
+        console.error(
+          '[MainProcessBootstrap] Failed to stop NutPollingService during shutdown',
+          nutStopResult.reason,
+        );
+      }
+
+      if (duckDbCloseResult.status === 'rejected') {
+        console.error(
+          '[MainProcessBootstrap] Failed to close DuckDB during shutdown',
+          duckDbCloseResult.reason,
+        );
+      }
+
+      shutdownCompleted = true;
+      app.quit();
+    })();
   });
 
   return {

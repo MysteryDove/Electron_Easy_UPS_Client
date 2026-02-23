@@ -11,6 +11,11 @@ import {
   type WizardTestConnectionPayload,
   type WizardTestConnectionResult,
   type WizardCompletePayload,
+  type NutSetupChooseFolderResult,
+  type NutSetupValidateFolderPayload,
+  type NutSetupValidateFolderResult,
+  type NutSetupPrepareLocalNutPayload,
+  type NutSetupPrepareLocalNutResult,
 } from './main/ipc/ipcChannels';
 import type { MainToRendererEventPayloads } from './main/ipc/ipcEvents';
 
@@ -37,6 +42,18 @@ const electronApi = {
       ipcRenderer.invoke(IPC_CHANNELS.wizardTestConnection, payload),
     complete: (payload: WizardCompletePayload): Promise<AppConfig> =>
       ipcRenderer.invoke(IPC_CHANNELS.wizardComplete, payload),
+  },
+  nutSetup: {
+    chooseFolder: (): Promise<NutSetupChooseFolderResult> =>
+      ipcRenderer.invoke(IPC_CHANNELS.nutSetupChooseFolder),
+    validateFolder: (
+      payload: NutSetupValidateFolderPayload,
+    ): Promise<NutSetupValidateFolderResult> =>
+      ipcRenderer.invoke(IPC_CHANNELS.nutSetupValidateFolder, payload),
+    prepareLocalNut: (
+      payload: NutSetupPrepareLocalNutPayload,
+    ): Promise<NutSetupPrepareLocalNutResult> =>
+      ipcRenderer.invoke(IPC_CHANNELS.nutSetupPrepareLocalNut, payload),
   },
   nut: {
     getState: (): Promise<{ state: import('./main/ipc/ipcEvents').ConnectionState, staticData: Record<string, string> | null }> =>
@@ -93,4 +110,3 @@ function subscribeToMainEvent<EventName extends keyof MainToRendererEventPayload
     ipcRenderer.removeListener(eventName, wrappedListener);
   };
 }
-
