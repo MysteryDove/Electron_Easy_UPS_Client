@@ -1,4 +1,4 @@
-import React, { useEffect, useState } from 'react';
+import React, { useEffect, useMemo, useState } from 'react';
 import { useTranslation } from 'react-i18next';
 import { useConnection } from '../app/providers';
 import type { TelemetryDataPoint } from '../../main/db/telemetryRepository';
@@ -19,7 +19,7 @@ const TIME_SCALE_MS: Record<TimeScale, number> = {
 };
 
 // UI formatting metadata for rendering columns gracefully
-type MetricMeta = { key: TelemetryColumn; title: string; unit: string; type?: 'voltage' | 'frequency' | 'current' | 'percent'; nominalKey?: string; applyMovingAverage?: boolean };
+type MetricMeta = { key: TelemetryColumn; title: string; unit: string; type?: 'voltage' | 'frequency' | 'current' | 'percent' | 'temperature'; nominalKey?: string; applyMovingAverage?: boolean };
 export function TelemetryPage() {
     const { t } = useTranslation();
     const { lastTelemetry, staticData } = useConnection();
@@ -29,7 +29,7 @@ export function TelemetryPage() {
         { key: 'battery_charge_pct', title: t('metrics.batteryCharge'), unit: '%', type: 'percent' },
         { key: 'battery_voltage', title: t('metrics.batteryVoltage'), unit: 'V', type: 'voltage', nominalKey: 'battery.voltage.nominal' },
         { key: 'battery_current', title: t('metrics.batteryCurrent'), unit: 'A', type: 'current' },
-        { key: 'battery_temperature', title: t('metrics.batteryTemp'), unit: '°C' },
+        { key: 'battery_temperature', title: t('metrics.batteryTemp'), unit: '\u00B0C', type: 'temperature', applyMovingAverage: true },
         { key: 'battery_runtime_sec', title: t('metrics.batteryRuntime'), unit: 's', applyMovingAverage: true },
         { key: 'input_voltage', title: t('metrics.inputVoltage'), unit: 'V', type: 'voltage', nominalKey: 'input.voltage.nominal' },
         { key: 'input_frequency_hz', title: t('metrics.inputFrequency'), unit: 'Hz', type: 'frequency', nominalKey: 'input.frequency.nominal' },
@@ -39,13 +39,18 @@ export function TelemetryPage() {
         { key: 'output_current', title: t('metrics.outputCurrent'), unit: 'A', type: 'current', applyMovingAverage: true },
         { key: 'ups_load_pct', title: t('metrics.upsLoad'), unit: '%', type: 'percent' },
         { key: 'ups_realpower_watts', title: t('metrics.realPower'), unit: 'W' },
-        { key: 'ups_temperature', title: t('metrics.upsTemp'), unit: '°C' },
+        { key: 'ups_temperature', title: t('metrics.upsTemp'), unit: '\u00B0C', type: 'temperature', applyMovingAverage: true },
         { key: 'ups_status_num', title: t('metrics.upsStatus'), unit: '' },
     ];
 
     const [history, setHistory] = useState<TelemetryDataPoint[]>([]);
     const [minMax, setMinMax] = useState<Record<string, { min: number | null; max: number | null }>>({});
     const [isLoading, setIsLoading] = useState(true);
+    const telemetryWindow = useMemo(() => {
+        const end = new Date();
+        const start = new Date(end.getTime() - TIME_SCALE_MS[timeScale]);
+        return { start, end };
+    }, [timeScale, lastTelemetry?.ts]);
 
     useEffect(() => {
         let mounted = true;
@@ -182,6 +187,8 @@ export function TelemetryPage() {
                                     applyMovingAverage={meta.applyMovingAverage}
                                     minAggregate={stats?.min ?? undefined}
                                     maxAggregate={stats?.max ?? undefined}
+                                    windowStart={telemetryWindow.start}
+                                    windowEnd={telemetryWindow.end}
                                 />
                             );
                         })}
@@ -191,3 +198,4 @@ export function TelemetryPage() {
         </div>
     );
 }
+

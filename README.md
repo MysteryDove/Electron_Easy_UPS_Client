@@ -35,6 +35,7 @@ A modern desktop application for monitoring UPS systems via the NUT (Network UPS
 > [!IMPORTANT]
 > **Manual NUT Configuration Required**
 > NUT (Network UPS Tools) must be configured manually on the host system (or a remote server) before this client can connect to it. Ensure that the `upsd` service is running and accessible.
+> A built-in "Configure NUT for Windows" flow is partially available and still under active development.
 
 ### Installation
 
