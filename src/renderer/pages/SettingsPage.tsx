@@ -1,8 +1,41 @@
-import { useCallback, useEffect, useState, type FormEvent } from 'react';
+import { useCallback, useEffect, useRef, useState } from 'react';
 import { useTranslation } from 'react-i18next';
 import { useAppConfig } from '../app/providers';
 import { Sun, Moon, Monitor, CheckCircle2, XCircle, Plug } from 'lucide-react';
 import { useNavigate } from 'react-router-dom';
+import { createPortal } from 'react-dom';
+
+type ShutdownMethod = 'sleep' | 'shutdown';
+type ThemeMode = 'light' | 'dark' | 'system';
+
+type SettingsDraft = {
+    host: string;
+    port: number;
+    username: string;
+    password: string;
+    upsName: string;
+    intervalMs: number;
+    retentionDays: number;
+    warningPct: number;
+    shutdownPct: number;
+    warningToastEnabled: boolean;
+    shutdownEnabled: boolean;
+    shutdownMethod: ShutdownMethod;
+    shutdownCountdownSeconds: number;
+    criticalAlertEnabled: boolean;
+    criticalShutdownAlertEnabled: boolean;
+    themeMode: ThemeMode;
+    nominalVoltage: number;
+    nominalFrequency: number;
+    voltageTolerancePosPct: number;
+    voltageToleranceNegPct: number;
+    frequencyTolerancePosPct: number;
+    frequencyToleranceNegPct: number;
+    lineAlertEnabled: boolean;
+    lineAlertCooldown: number;
+    locale: string;
+    startWithWindows: boolean;
+};
 
 export function SettingsPage() {
     const { t } = useTranslation();
@@ -13,6 +46,7 @@ export function SettingsPage() {
         type: 'success' | 'error';
         text: string;
     } | null>(null);
+    const saveMessageTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
     // Local form state (mirrors config)
     const [host, setHost] = useState('');
@@ -26,11 +60,11 @@ export function SettingsPage() {
     const [shutdownPct, setShutdownPct] = useState(20);
     const [warningToastEnabled, setWarningToastEnabled] = useState(true);
     const [shutdownEnabled, setShutdownEnabled] = useState(false);
-    const [shutdownMethod, setShutdownMethod] = useState<'sleep' | 'shutdown'>('sleep');
+    const [shutdownMethod, setShutdownMethod] = useState<ShutdownMethod>('sleep');
     const [shutdownCountdownSeconds, setShutdownCountdownSeconds] = useState(45);
     const [criticalAlertEnabled, setCriticalAlertEnabled] = useState(true);
     const [criticalShutdownAlertEnabled, setCriticalShutdownAlertEnabled] = useState(true);
-    const [themeMode, setThemeMode] = useState<'light' | 'dark' | 'system'>('system');
+    const [themeMode, setThemeMode] = useState<ThemeMode>('system');
     const [nominalVoltage, setNominalVoltage] = useState(220);
     const [nominalFrequency, setNominalFrequency] = useState(50);
     const [voltageTolerancePosPct, setVoltageTolerancePosPct] = useState(10);
@@ -73,71 +107,45 @@ export function SettingsPage() {
         setStartWithWindows(config.startup.startWithWindows);
     }, [config]);
 
-    const handleSave = useCallback(
-        async (e: FormEvent) => {
-            e.preventDefault();
-            setSaving(true);
-            setSaveMessage(null);
-
-            try {
-                // Validate shutdownPct < warningPct client-side
-                if (shutdownPct >= warningPct) {
-                    setSaveMessage({
-                        type: 'error',
-                        text: 'Shutdown % must be lower than Warning %.',
-                    });
-                    setSaving(false);
-                    return;
-                }
-
-                // eslint-disable-next-line @typescript-eslint/no-explicit-any
-                await (window as any).electronApi.settings.update({
-                    nut: {
-                        host,
-                        port,
-                        username: username || undefined,
-                        password: password || undefined,
-                        upsName,
-                    },
-                    polling: { intervalMs },
-                    data: { retentionDays },
-                    battery: {
-                        warningPct,
-                        shutdownPct,
-                        warningToastEnabled,
-                        shutdownEnabled,
-                        shutdownMethod,
-                        shutdownCountdownSeconds,
-                        criticalAlertEnabled,
-                        criticalShutdownAlertEnabled,
-                    },
-                    theme: { mode: themeMode },
-                    line: {
-                        nominalVoltage,
-                        nominalFrequency,
-                        voltageTolerancePosPct,
-                        voltageToleranceNegPct,
-                        frequencyTolerancePosPct,
-                        frequencyToleranceNegPct,
-                        alertEnabled: lineAlertEnabled,
-                        alertCooldownMinutes: lineAlertCooldown,
-                    },
-                    i18n: { locale },
-                    startup: { startWithWindows },
-                });
-
-                await refreshConfig();
-                setSaveMessage({ type: 'success', text: 'Settings saved.' });
-                setTimeout(() => setSaveMessage(null), 6000);
-            } catch (err) {
-                setSaveMessage({
-                    type: 'error',
-                    text: err instanceof Error ? err.message : t('settings.saveFailed'),
-                });
-            } finally {
-                setSaving(false);
+    useEffect(() => {
+        return () => {
+            if (saveMessageTimerRef.current) {
+                clearTimeout(saveMessageTimerRef.current);
+                saveMessageTimerRef.current = null;
             }
-        },
+        };
+    }, []);
+
+    const buildDraft = useCallback(
+        (overrides: Partial<SettingsDraft> = {}): SettingsDraft => ({
+            host,
+            port,
+            username,
+            password,
+            upsName,
+            intervalMs,
+            retentionDays,
+            warningPct,
+            shutdownPct,
+            warningToastEnabled,
+            shutdownEnabled,
+            shutdownMethod,
+            shutdownCountdownSeconds,
+            criticalAlertEnabled,
+            criticalShutdownAlertEnabled,
+            themeMode,
+            nominalVoltage,
+            nominalFrequency,
+            voltageTolerancePosPct,
+            voltageToleranceNegPct,
+            frequencyTolerancePosPct,
+            frequencyToleranceNegPct,
+            lineAlertEnabled,
+            lineAlertCooldown,
+            locale,
+            startWithWindows,
+            ...overrides,
+        }),
         [
             host,
             port,
@@ -165,8 +173,79 @@ export function SettingsPage() {
             lineAlertCooldown,
             locale,
             startWithWindows,
-            refreshConfig,
         ],
+    );
+
+    const persistSettings = useCallback(
+        async (overrides: Partial<SettingsDraft> = {}) => {
+            const draft = buildDraft(overrides);
+            setSaving(true);
+            if (saveMessageTimerRef.current) {
+                clearTimeout(saveMessageTimerRef.current);
+                saveMessageTimerRef.current = null;
+            }
+
+            try {
+                if (draft.shutdownPct >= draft.warningPct) {
+                    setSaveMessage({
+                        type: 'error',
+                        text: 'Shutdown % must be lower than Warning %.',
+                    });
+                    return;
+                }
+
+                // eslint-disable-next-line @typescript-eslint/no-explicit-any
+                await (window as any).electronApi.settings.update({
+                    nut: {
+                        host: draft.host,
+                        port: draft.port,
+                        username: draft.username || undefined,
+                        password: draft.password || undefined,
+                        upsName: draft.upsName,
+                    },
+                    polling: { intervalMs: draft.intervalMs },
+                    data: { retentionDays: draft.retentionDays },
+                    battery: {
+                        warningPct: draft.warningPct,
+                        shutdownPct: draft.shutdownPct,
+                        warningToastEnabled: draft.warningToastEnabled,
+                        shutdownEnabled: draft.shutdownEnabled,
+                        shutdownMethod: draft.shutdownMethod,
+                        shutdownCountdownSeconds: draft.shutdownCountdownSeconds,
+                        criticalAlertEnabled: draft.criticalAlertEnabled,
+                        criticalShutdownAlertEnabled: draft.criticalShutdownAlertEnabled,
+                    },
+                    theme: { mode: draft.themeMode },
+                    line: {
+                        nominalVoltage: draft.nominalVoltage,
+                        nominalFrequency: draft.nominalFrequency,
+                        voltageTolerancePosPct: draft.voltageTolerancePosPct,
+                        voltageToleranceNegPct: draft.voltageToleranceNegPct,
+                        frequencyTolerancePosPct: draft.frequencyTolerancePosPct,
+                        frequencyToleranceNegPct: draft.frequencyToleranceNegPct,
+                        alertEnabled: draft.lineAlertEnabled,
+                        alertCooldownMinutes: draft.lineAlertCooldown,
+                    },
+                    i18n: { locale: draft.locale },
+                    startup: { startWithWindows: draft.startWithWindows },
+                });
+
+                await refreshConfig();
+                setSaveMessage({ type: 'success', text: t('settings.saveSuccess') });
+                saveMessageTimerRef.current = setTimeout(() => {
+                    setSaveMessage(null);
+                    saveMessageTimerRef.current = null;
+                }, 3000);
+            } catch (err) {
+                setSaveMessage({
+                    type: 'error',
+                    text: err instanceof Error ? err.message : t('settings.saveFailed'),
+                });
+            } finally {
+                setSaving(false);
+            }
+        },
+        [buildDraft, refreshConfig, t],
     );
 
     if (!config) {
@@ -181,9 +260,10 @@ export function SettingsPage() {
         <div className="settings-page">
             <header className="page-header">
                 <h1 className="page-title">{t('settings.title')}</h1>
+                {saving && <span className="page-subtitle">{t('settings.saving')}</span>}
             </header>
 
-            <form className="settings-form" onSubmit={handleSave}>
+            <div className="settings-form">
                 {/* NUT Connection */}
                 <section className="settings-section">
                     <h2 className="settings-section-title">{t('settings.nutConnection')}</h2>
@@ -220,6 +300,8 @@ export function SettingsPage() {
                                     step={500}
                                     value={intervalMs}
                                     onChange={(e) => setIntervalMs(Number(e.target.value))}
+                                    onPointerUp={(e) => void persistSettings({ intervalMs: Number(e.currentTarget.value) })}
+                                    onBlur={(e) => void persistSettings({ intervalMs: Number(e.currentTarget.value) })}
                                 />
                                 <span className="form-range-value">
                                     {intervalMs >= 1000
@@ -245,6 +327,7 @@ export function SettingsPage() {
                                 type="number"
                                 value={retentionDays}
                                 onChange={(e) => setRetentionDays(Number(e.target.value))}
+                                onBlur={(e) => void persistSettings({ retentionDays: Number(e.currentTarget.value) })}
                                 min={1}
                                 max={3650}
                             />
@@ -267,6 +350,7 @@ export function SettingsPage() {
                                     type="number"
                                     value={nominalVoltage}
                                     onChange={(e) => setNominalVoltage(Number(e.target.value))}
+                                    onBlur={(e) => void persistSettings({ nominalVoltage: Number(e.currentTarget.value) })}
                                     min={1}
                                     max={500}
                                 />
@@ -281,6 +365,7 @@ export function SettingsPage() {
                                     type="number"
                                     value={nominalFrequency}
                                     onChange={(e) => setNominalFrequency(Number(e.target.value))}
+                                    onBlur={(e) => void persistSettings({ nominalFrequency: Number(e.currentTarget.value) })}
                                     min={1}
                                     max={100}
                                 />
@@ -298,6 +383,7 @@ export function SettingsPage() {
                                     type="number"
                                     value={voltageTolerancePosPct}
                                     onChange={(e) => setVoltageTolerancePosPct(Number(e.target.value))}
+                                    onBlur={(e) => void persistSettings({ voltageTolerancePosPct: Number(e.currentTarget.value) })}
                                     min={0}
                                     max={100}
                                     step={1}
@@ -313,6 +399,7 @@ export function SettingsPage() {
                                     type="number"
                                     value={voltageToleranceNegPct}
                                     onChange={(e) => setVoltageToleranceNegPct(Number(e.target.value))}
+                                    onBlur={(e) => void persistSettings({ voltageToleranceNegPct: Number(e.currentTarget.value) })}
                                     min={0}
                                     max={100}
                                     step={1}
@@ -331,6 +418,7 @@ export function SettingsPage() {
                                     type="number"
                                     value={frequencyTolerancePosPct}
                                     onChange={(e) => setFrequencyTolerancePosPct(Number(e.target.value))}
+                                    onBlur={(e) => void persistSettings({ frequencyTolerancePosPct: Number(e.currentTarget.value) })}
                                     min={0}
                                     max={100}
                                     step={0.5}
@@ -346,6 +434,7 @@ export function SettingsPage() {
                                     type="number"
                                     value={frequencyToleranceNegPct}
                                     onChange={(e) => setFrequencyToleranceNegPct(Number(e.target.value))}
+                                    onBlur={(e) => void persistSettings({ frequencyToleranceNegPct: Number(e.currentTarget.value) })}
                                     min={0}
                                     max={100}
                                     step={0.5}
@@ -362,7 +451,11 @@ export function SettingsPage() {
                                 <input
                                     type="checkbox"
                                     checked={lineAlertEnabled}
-                                    onChange={(e) => setLineAlertEnabled(e.target.checked)}
+                                    onChange={(e) => {
+                                        const checked = e.target.checked;
+                                        setLineAlertEnabled(checked);
+                                        void persistSettings({ lineAlertEnabled: checked });
+                                    }}
                                 />
                                 <span className="form-toggle-label">{t('settings.enableLineAlerts')}</span>
                             </label>
@@ -376,6 +469,7 @@ export function SettingsPage() {
                                     type="number"
                                     value={lineAlertCooldown}
                                     onChange={(e) => setLineAlertCooldown(Number(e.target.value))}
+                                    onBlur={(e) => void persistSettings({ lineAlertCooldown: Number(e.currentTarget.value) })}
                                     min={1}
                                     max={1440}
                                 />
@@ -399,6 +493,7 @@ export function SettingsPage() {
                                     type="number"
                                     value={warningPct}
                                     onChange={(e) => setWarningPct(Number(e.target.value))}
+                                    onBlur={(e) => void persistSettings({ warningPct: Number(e.currentTarget.value) })}
                                     min={1}
                                     max={100}
                                 />
@@ -413,6 +508,7 @@ export function SettingsPage() {
                                     type="number"
                                     value={shutdownPct}
                                     onChange={(e) => setShutdownPct(Number(e.target.value))}
+                                    onBlur={(e) => void persistSettings({ shutdownPct: Number(e.currentTarget.value) })}
                                     min={1}
                                     max={100}
                                 />
@@ -423,7 +519,11 @@ export function SettingsPage() {
                                 <input
                                     type="checkbox"
                                     checked={warningToastEnabled}
-                                    onChange={(e) => setWarningToastEnabled(e.target.checked)}
+                                    onChange={(e) => {
+                                        const checked = e.target.checked;
+                                        setWarningToastEnabled(checked);
+                                        void persistSettings({ warningToastEnabled: checked });
+                                    }}
                                 />
                                 <span className="form-toggle-label">{t('settings.enableWarningToasts')}</span>
                             </label>
@@ -431,7 +531,11 @@ export function SettingsPage() {
                                 <input
                                     type="checkbox"
                                     checked={shutdownEnabled}
-                                    onChange={(e) => setShutdownEnabled(e.target.checked)}
+                                    onChange={(e) => {
+                                        const checked = e.target.checked;
+                                        setShutdownEnabled(checked);
+                                        void persistSettings({ shutdownEnabled: checked });
+                                    }}
                                 />
                                 <span className="form-toggle-label">
                                     {t('settings.enableAutoShutdown')}
@@ -447,7 +551,11 @@ export function SettingsPage() {
                                     id="shutdownMethod"
                                     className="telemetry-select"
                                     value={shutdownMethod}
-                                    onChange={(e) => setShutdownMethod(e.target.value as 'sleep' | 'shutdown')}
+                                    onChange={(e) => {
+                                        const method = e.target.value as ShutdownMethod;
+                                        setShutdownMethod(method);
+                                        void persistSettings({ shutdownMethod: method });
+                                    }}
                                     disabled={!shutdownEnabled}
                                     style={{ width: '100%' }}
                                 >
@@ -465,6 +573,7 @@ export function SettingsPage() {
                                     type="number"
                                     value={shutdownCountdownSeconds}
                                     onChange={(e) => setShutdownCountdownSeconds(Number(e.target.value))}
+                                    onBlur={(e) => void persistSettings({ shutdownCountdownSeconds: Number(e.currentTarget.value) })}
                                     min={1}
                                     max={300}
                                     disabled={!shutdownEnabled}
@@ -476,7 +585,11 @@ export function SettingsPage() {
                                 <input
                                     type="checkbox"
                                     checked={criticalAlertEnabled}
-                                    onChange={(e) => setCriticalAlertEnabled(e.target.checked)}
+                                    onChange={(e) => {
+                                        const checked = e.target.checked;
+                                        setCriticalAlertEnabled(checked);
+                                        void persistSettings({ criticalAlertEnabled: checked });
+                                    }}
                                 />
                                 <span className="form-toggle-label">{t('settings.warningOverlay')}</span>
                             </label>
@@ -484,7 +597,11 @@ export function SettingsPage() {
                                 <input
                                     type="checkbox"
                                     checked={criticalShutdownAlertEnabled}
-                                    onChange={(e) => setCriticalShutdownAlertEnabled(e.target.checked)}
+                                    onChange={(e) => {
+                                        const checked = e.target.checked;
+                                        setCriticalShutdownAlertEnabled(checked);
+                                        void persistSettings({ criticalShutdownAlertEnabled: checked });
+                                    }}
                                 />
                                 <span className="form-toggle-label">{t('settings.shutdownOverlay')}</span>
                             </label>
@@ -501,7 +618,11 @@ export function SettingsPage() {
                             <input
                                 type="checkbox"
                                 checked={startWithWindows}
-                                onChange={(e) => setStartWithWindows(e.target.checked)}
+                                onChange={(e) => {
+                                    const checked = e.target.checked;
+                                    setStartWithWindows(checked);
+                                    void persistSettings({ startWithWindows: checked });
+                                }}
                             />
                             <span className="form-toggle-label">{t('settings.startWithWindows')}</span>
                         </label>
@@ -522,15 +643,9 @@ export function SettingsPage() {
                                         key={mode}
                                         type="button"
                                         className={`theme-btn ${themeMode === mode ? 'theme-btn--active' : ''}`}
-                                        onClick={async () => {
+                                        onClick={() => {
                                             setThemeMode(mode);
-                                            try {
-                                                // eslint-disable-next-line @typescript-eslint/no-explicit-any
-                                                await (window as any).electronApi.settings.update({ theme: { mode } });
-                                                await refreshConfig();
-                                            } catch (err) {
-                                                console.error("Failed to apply theme", err);
-                                            }
+                                            void persistSettings({ themeMode: mode });
                                         }}
                                     >
                                         {mode === 'light' ? <Sun size={18} /> : mode === 'dark' ? <Moon size={18} /> : <Monitor size={18} />}
@@ -548,9 +663,9 @@ export function SettingsPage() {
                                 className="telemetry-select"
                                 value={locale}
                                 onChange={(e) => {
-                                    setLocale(e.target.value);
-                                    // Save language change immediately for preview logic or let the user click save?
-                                    // The save button makes sense. But language is nice immediately. We'll wait for explicitly saving.
+                                    const nextLocale = e.target.value;
+                                    setLocale(nextLocale);
+                                    void persistSettings({ locale: nextLocale });
                                 }}
                                 style={{ width: '100%', maxWidth: 300 }}
                             >
@@ -562,34 +677,19 @@ export function SettingsPage() {
                     </div>
                 </section>
 
-                {/* Submit */}
-                <div className="settings-actions">
-                    <button
-                        type="submit"
-                        className="btn btn--primary"
-                        disabled={saving}
-                    >
-                        {saving ? (
-                            <>
-                                <span className="btn-spinner" />
-                                {t('settings.saving')}
-                            </>
-                        ) : (
-                            t('settings.saveSettings')
-                        )}
-                    </button>
-                </div>
-            </form>
+            </div>
 
             {/* Floating Snackbar */}
-            {saveMessage && (
-                <div className={`snackbar snackbar--${saveMessage.type}`}>
-                    <span className="feedback-icon">
-                        {saveMessage.type === 'success' ? <CheckCircle2 size={18} /> : <XCircle size={18} />}
-                    </span>
-                    <span>{saveMessage.text}</span>
-                </div>
-            )}
+            {saveMessage &&
+                createPortal(
+                    <div className={`snackbar settings-snackbar snackbar--${saveMessage.type}`}>
+                        <span className="feedback-icon">
+                            {saveMessage.type === 'success' ? <CheckCircle2 size={18} /> : <XCircle size={18} />}
+                        </span>
+                        <span>{saveMessage.text}</span>
+                    </div>,
+                    document.body,
+                )}
         </div>
     );
 }

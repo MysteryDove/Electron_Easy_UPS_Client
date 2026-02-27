@@ -15,6 +15,38 @@ export interface SparklineCardProps {
     toleranceNegPct?: number;
 }
 
+function formatMetricDisplayValue(
+    value: number | string | null,
+    metricType: SparklineCardProps['metricType'],
+): string {
+    if (value === null) {
+        return '--';
+    }
+
+    if (typeof value === 'string') {
+        return value;
+    }
+
+    let minimumFractionDigits = 0;
+    let maximumFractionDigits = 2;
+
+    if (metricType === 'voltage') {
+        minimumFractionDigits = 1;
+        maximumFractionDigits = 1;
+    } else if (metricType === 'frequency' || metricType === 'current') {
+        minimumFractionDigits = 1;
+        maximumFractionDigits = 2;
+    } else if (metricType === 'percent') {
+        minimumFractionDigits = 0;
+        maximumFractionDigits = 1;
+    }
+
+    return new Intl.NumberFormat(undefined, {
+        minimumFractionDigits,
+        maximumFractionDigits,
+    }).format(value);
+}
+
 function calculateSMA(data: number[], windowSize: number): number[] {
     return data.map((val, idx, arr) => {
         let sum = 0;
@@ -172,6 +204,8 @@ export function SparklineCard({
         };
     }, [data, color, unit, metricType, nominalValue]);
 
+    const displayValue = formatMetricDisplayValue(currentValue, metricType);
+
     return (
         <div className="sparkline-card">
             <div className="sparkline-header">
@@ -181,7 +215,7 @@ export function SparklineCard({
                 <div className="sparkline-metric">
                     {icon && <span className="sparkline-icon">{icon}</span>}
                     <span className="sparkline-value">
-                        {currentValue !== null ? currentValue : '--'}
+                        {displayValue}
                     </span>
                     {currentValue !== null && unit && (
                         <span className="sparkline-unit">{unit}</span>

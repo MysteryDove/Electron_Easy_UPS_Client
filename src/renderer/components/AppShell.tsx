@@ -1,4 +1,4 @@
-import { NavLink } from 'react-router-dom';
+import { NavLink, useLocation } from 'react-router-dom';
 import React, { useState } from 'react';
 import type { ReactNode } from 'react';
 import { useTranslation } from 'react-i18next';
@@ -26,6 +26,7 @@ export function AppShell({ children }: { children: ReactNode }) {
     const { t } = useTranslation();
     const { state } = useConnection();
     const [isCollapsed, setIsCollapsed] = useState(false);
+    const location = useLocation();
 
     return (
         <div className="app-shell">
@@ -81,7 +82,11 @@ export function AppShell({ children }: { children: ReactNode }) {
             </aside>
 
             {/* Main content */}
-            <main className="main-content">{children}</main>
+            <main className="main-content">
+                <div key={location.pathname} className="route-page-transition">
+                    {children}
+                </div>
+            </main>
         </div>
     );
 }

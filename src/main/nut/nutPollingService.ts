@@ -78,6 +78,7 @@ export class NutPollingService {
   private availableFields: Set<string> = new Set();
   private staticFields: Set<string> = new Set();
   private dynamicFields: Set<string> = new Set();
+  // Contains the latest full raw NUT snapshot (static + dynamic fields).
   private staticSnapshot: Record<string, string> = {};
 
   public constructor(configStore: ConfigStore, telemetryRepository: TelemetryRepository) {
@@ -229,25 +230,21 @@ export class NutPollingService {
       this.availableFields = discoveryResult.availableFields;
       this.staticFields = discoveryResult.staticFields;
       this.dynamicFields = discoveryResult.dynamicFields;
-      this.staticSnapshot = discoveryResult.staticSnapshot;
+      this.staticSnapshot = {
+        ...discoveryResult.staticSnapshot,
+        ...discoveryResult.initialDynamicSnapshot,
+      };
       this.log('debug', 'Capability discovery completed', {
         availableFieldCount: this.availableFields.size,
         staticFieldCount: this.staticFields.size,
         dynamicFieldCount: this.dynamicFields.size,
       });
 
-      this.emitToRenderers(IPC_EVENTS.upsStaticData, {
-        values: this.staticSnapshot,
-        fields: {
-          available: [...this.availableFields],
-          static: [...this.staticFields],
-          dynamic: [...this.dynamicFields],
-        },
-      });
+      this.emitCurrentNutSnapshot();
 
       this.logPolledSnapshot(
         discoveryResult.initialDynamicSnapshot,
-        'initial',
+      'initial',
       );
       await this.persistAndBroadcastTelemetry(discoveryResult.initialDynamicSnapshot);
 
@@ -614,7 +611,7 @@ export class NutPollingService {
   }
 
   private async pollDynamicFields(): Promise<void> {
-    if (!this.started || this.pollInFlight || this.dynamicFields.size === 0) {
+    if (!this.started || this.pollInFlight || this.availableFields.size === 0) {
       return;
     }
 
@@ -622,12 +619,18 @@ export class NutPollingService {
     try {
       const config = this.configStore.get();
       this.debugLogLevel = config.debug.level;
-      const snapshot = await this.nutClient.getVariables(config.nut.upsName, [
-        ...this.dynamicFields,
+      const fullSnapshot = await this.nutClient.getVariables(config.nut.upsName, [
+        ...this.availableFields,
       ]);
-      this.logPolledSnapshot(snapshot);
+      this.logPolledSnapshot(fullSnapshot);
+      this.updateCurrentNutSnapshot(fullSnapshot);
+      this.emitCurrentNutSnapshot();
 
-      await this.persistAndBroadcastTelemetry(snapshot);
+      const dynamicSnapshot = pickSnapshotByFields(
+        fullSnapshot,
+        this.dynamicFields,
+      );
+      await this.persistAndBroadcastTelemetry(dynamicSnapshot);
     } catch (error) {
       await this.handleConnectionFailure(error);
     } finally {
@@ -715,6 +718,26 @@ export class NutPollingService {
     }
   }
 
+  private updateCurrentNutSnapshot(
+    dynamicSnapshot: Record<string, string>,
+  ): void {
+    this.staticSnapshot = {
+      ...this.staticSnapshot,
+      ...dynamicSnapshot,
+    };
+  }
+
+  private emitCurrentNutSnapshot(): void {
+    this.emitToRenderers(IPC_EVENTS.upsStaticData, {
+      values: this.staticSnapshot,
+      fields: {
+        available: [...this.availableFields],
+        static: [...this.staticFields],
+        dynamic: [...this.dynamicFields],
+      },
+    });
+  }
+
   private emitToRenderers(channel: string, payload: unknown): void {
     for (const window of BrowserWindow.getAllWindows()) {
       if (window.isDestroyed()) {
@@ -745,30 +768,44 @@ export class NutPollingService {
     context: 'initial' | 'runtime' = 'runtime',
   ): void {
     const fieldCount = Object.keys(snapshot).length;
-    if (this.shouldLog('debug')) {
+    const message = `[${context}] Polled ${fieldCount} NUT fields`;
+
+    if (this.shouldLog('trace')) {
       this.log(
         'debug',
-        `[${context}] Polled ${fieldCount} dynamic NUT fields`,
+        message,
         prettyJson(snapshot),
       );
       return;
     }
 
-    this.log('info', `[${context}] Polled ${fieldCount} dynamic NUT fields`);
+    if (this.shouldLog('debug')) {
+      this.log('debug', message);
+      return;
+    }
+
+    this.log('info', message);
   }
 
   private logMappedTelemetry(values: Record<string, unknown>): void {
     const fieldCount = Object.keys(values).length;
-    if (this.shouldLog('debug')) {
+    const message = `Mapped ${fieldCount} telemetry values`;
+
+    if (this.shouldLog('trace')) {
       this.log(
         'debug',
-        `Mapped ${fieldCount} telemetry values`,
+        message,
         prettyJson(values),
       );
       return;
     }
 
-    this.log('info', `Mapped ${fieldCount} telemetry values`);
+    if (this.shouldLog('debug')) {
+      this.log('debug', message);
+      return;
+    }
+
+    this.log('info', message);
   }
 
   private shouldLog(level: Exclude<DebugLogLevel, 'off'>): boolean {
@@ -786,21 +823,37 @@ export class NutPollingService {
 
     const prefix = '[NutPollingService]';
     if (level === 'error') {
-      console.error(prefix, message, payload ?? '');
+      if (payload === undefined) {
+        console.error(prefix, message);
+      } else {
+        console.error(prefix, message, payload);
+      }
       return;
     }
 
     if (level === 'warn') {
-      console.warn(prefix, message, payload ?? '');
+      if (payload === undefined) {
+        console.warn(prefix, message);
+      } else {
+        console.warn(prefix, message, payload);
+      }
       return;
     }
 
     if (level === 'info') {
-      console.info(prefix, message, payload ?? '');
+      if (payload === undefined) {
+        console.info(prefix, message);
+      } else {
+        console.info(prefix, message, payload);
+      }
       return;
     }
 
-    console.debug(prefix, message, payload ?? '');
+    if (payload === undefined) {
+      console.debug(prefix, message);
+    } else {
+      console.debug(prefix, message, payload);
+    }
   }
 }
 
@@ -930,6 +983,19 @@ function prettyJson(payload: unknown): string {
     );
 
   return JSON.stringify(sorted, null, 2);
+}
+
+function pickSnapshotByFields(
+  source: Record<string, string>,
+  fields: Set<string>,
+): Record<string, string> {
+  const snapshot: Record<string, string> = {};
+  for (const fieldName of fields) {
+    if (typeof source[fieldName] === 'string') {
+      snapshot[fieldName] = source[fieldName];
+    }
+  }
+  return snapshot;
 }
 
 function clampPollingIntervalMs(value: number): number {

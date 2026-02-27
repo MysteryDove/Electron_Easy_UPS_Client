@@ -16,7 +16,7 @@ import type {
 
 const execFileAsync = promisify(execFile);
 
-const REQUIRED_DIRS = ['etc', 'lib', 'include', 'bin', 'cgi-bin', 'sbin'];
+const REQUIRED_DIRS = ['etc', 'lib', 'include', 'bin', 'sbin'];
 const REQUIRED_FILES = ['sbin/upsd.exe', 'bin/nut.exe'];
 const SNMP_DRIVER_RELATIVE_PATH_CANDIDATES = [
   'bin/snmp-ups.exe',
@@ -90,9 +90,17 @@ export async function validateNutFolder(
   const normalizedFolder = folderPath.trim();
 
   if (!normalizedFolder) {
+    const expectedEntries = [
+      ...REQUIRED_DIRS.map((entry) => `${entry}/`),
+      ...REQUIRED_FILES,
+    ];
+    console.warn(
+      '[nutSetupService] validateNutFolder failed: folderPath is empty',
+      { expectedEntries },
+    );
     return {
       valid: false,
-      missing: [...REQUIRED_DIRS.map((entry) => `${entry}/`), ...REQUIRED_FILES],
+      missing: expectedEntries,
       writable: false,
     };
   }
@@ -102,6 +110,10 @@ export async function validateNutFolder(
       path.join(normalizedFolder, relativeDir),
     );
     if (!exists) {
+      console.warn(
+        `[nutSetupService] validateNutFolder missing required directory: ${relativeDir}/`,
+        { folderPath: normalizedFolder },
+      );
       missing.push(`${relativeDir}/`);
     }
   }
@@ -109,17 +121,36 @@ export async function validateNutFolder(
   for (const relativeFile of REQUIRED_FILES) {
     const exists = await pathExistsAsFile(path.join(normalizedFolder, relativeFile));
     if (!exists) {
+      console.warn(
+        `[nutSetupService] validateNutFolder missing required file: ${relativeFile}`,
+        { folderPath: normalizedFolder },
+      );
       missing.push(relativeFile);
     }
   }
 
-  const valid = missing.length === 0;
-  const writable = valid
-    ? await isNutFolderWritable(normalizedFolder)
-    : false;
+  if (missing.length > 0) {
+    console.warn(
+      '[nutSetupService] validateNutFolder failed: required entries are missing',
+      { folderPath: normalizedFolder, missing },
+    );
+    return {
+      valid: false,
+      missing,
+      writable: false,
+    };
+  }
+
+  const writable = await isNutFolderWritable(normalizedFolder);
+  if (!writable) {
+    console.warn(
+      '[nutSetupService] validateNutFolder failed: folder is not writable',
+      { folderPath: normalizedFolder },
+    );
+  }
 
   return {
-    valid,
+    valid: true,
     missing,
     writable,
   };

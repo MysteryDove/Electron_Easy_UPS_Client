@@ -41,7 +41,15 @@
         "groupBattery": "Battery",
         "groupInput": "Input",
         "groupOutput": "Output",
-        "staticInfo": "UPS Information"
+        "staticInfo": "UPS Information",
+        "detailGroupBattery": "Battery",
+        "detailGroupInput": "Input",
+        "detailGroupOutput": "Output",
+        "detailGroupDriver": "Driver",
+        "detailGroupUps": "UPS",
+        "detailGroupDevice": "Device",
+        "detailGroupAmbient": "Ambient",
+        "detailGroupOther": "Other"
     },
     "telemetry": {
         "title": "Telemetry History",
@@ -159,6 +167,7 @@
     },
     "settings": {
         "title": "Settings",
+        "saveSuccess": "Settings saved.",
         "saveFailed": "Failed to save settings.",
         "nutConnection": "NUT Connection",
         "reconfigureConnection": "Reconfigure connection...",
@@ -234,7 +243,9 @@
     },
     "reconnect": {
         "title": "Connection Lost",
+        "titleInitializing": "Waiting for driver initialization",
         "messageDegraded": "Connection is degraded. Retrying...",
+        "messageInitializing": "Starting local UPS driver. This can take a moment on cold start.",
         "messageConnecting": "Attempting to reconnect to the NUT server...",
         "lastKnownBattery": "Last known battery charge: {{percent}}%"
     },

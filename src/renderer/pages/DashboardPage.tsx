@@ -1,15 +1,29 @@
-import React, { useEffect, useState } from 'react';
+﻿import React, { Fragment, useEffect, useMemo, useState } from 'react';
 import { useTranslation } from 'react-i18next';
 import { useConnection, useAppConfig } from '../app/providers';
 import type { TelemetryDataPoint } from '../../main/db/telemetryRepository';
 import { SparklineCard } from '../components/SparklineCard';
-import { Battery, Zap, Activity, Plug, BatteryWarning } from 'lucide-react';
+import { Battery, Zap, Activity, Plug, BatteryWarning, ChevronDown } from 'lucide-react';
+import { Disclosure, Transition } from '@headlessui/react';
 
 import type { TFunction } from 'i18next';
 
 const HISTORY_LIMIT = 50;
 
 type MetricKey = { key: string; title: string; unit: string; icon?: React.ReactNode; type?: 'voltage' | 'frequency' | 'current' | 'percent' | 'default'; nominalKey?: string; applyMovingAverage?: boolean };
+type NutDetailsGroupKey = 'battery' | 'input' | 'output' | 'driver' | 'ups' | 'device' | 'ambient' | 'other';
+type NutDetailsGroup = { key: NutDetailsGroupKey; label: string; entries: Array<[string, string]> };
+
+const NUT_DETAILS_GROUP_ORDER: NutDetailsGroupKey[] = [
+    'battery',
+    'input',
+    'output',
+    'driver',
+    'ups',
+    'device',
+    'ambient',
+    'other',
+];
 
 function getStatusInfo(statusNum: number | null | undefined, t: TFunction): { label: string; className: string; icon: React.ReactNode } {
     if (statusNum === 1) return { label: t('dashboard.statusOnline'), className: 'ups-status-badge--online', icon: <Plug size={18} /> };
@@ -22,6 +36,37 @@ export function DashboardPage() {
     const { staticData, lastTelemetry } = useConnection();
     const { config } = useAppConfig();
     const [history, setHistory] = useState<TelemetryDataPoint[]>([]);
+
+    const groupedNutDetails = useMemo<NutDetailsGroup[]>(() => {
+        if (!staticData || Object.keys(staticData).length === 0) {
+            return [];
+        }
+
+        const buckets = new Map<NutDetailsGroupKey, Array<[string, string]>>();
+        for (const groupKey of NUT_DETAILS_GROUP_ORDER) {
+            buckets.set(groupKey, []);
+        }
+
+        const sortedEntries = Object.entries(staticData).sort(([left], [right]) =>
+            left.localeCompare(right),
+        );
+
+        for (const [fieldName, value] of sortedEntries) {
+            const groupKey = resolveNutDetailsGroupKey(fieldName);
+            const entries = buckets.get(groupKey);
+            if (entries) {
+                entries.push([fieldName, value]);
+            }
+        }
+
+        return NUT_DETAILS_GROUP_ORDER
+            .map((groupKey) => ({
+                key: groupKey,
+                label: getNutDetailsGroupLabel(groupKey, t),
+                entries: buckets.get(groupKey) ?? [],
+            }))
+            .filter((group) => group.entries.length > 0);
+    }, [staticData, t]);
 
     const BATTERY_KEYS: MetricKey[] = [
         { key: 'battery_charge_pct', title: t('metrics.batteryCharge'), unit: '%', icon: <Battery size={16} />, type: 'percent' },
@@ -181,27 +226,95 @@ export function DashboardPage() {
                 {renderGroup(t('dashboard.groupOutput'), OUTPUT_KEYS)}
             </section>
 
-            {/* Static info panel */}
-            {staticData && Object.keys(staticData).length > 0 && (
-                <details className="dashboard-static group mb-6">
-                    <summary className="cursor-pointer select-none flex items-center justify-between list-none [&::-webkit-details-marker]:hidden">
-                        <span className="font-semibold text-slate-800 dark:text-slate-200">{t('dashboard.staticInfo')}</span>
-                        <span className="text-slate-400 transition-transform duration-200 group-open:rotate-180">
-                            ▼
-                        </span>
-                    </summary>
-                    <div className="static-grid border-t border-slate-200 dark:border-slate-700">
-                        {Object.entries(staticData).map(([key, value]) => (
-                            <div key={key} className="static-item">
-                                <span className="static-item-label">{key}</span>
-                                <span className="static-item-value">{value}</span>
-                            </div>
-                        ))}
-                    </div>
-                </details>
+            {/* Detailed raw NUT info (includes all keys, even if duplicated in top cards). */}
+            {groupedNutDetails.length > 0 && (
+                <Disclosure>
+                    {({ open }) => (
+                        <section className="dashboard-static">
+                            <Disclosure.Button className="dashboard-static-toggle" type="button">
+                                <span className="dashboard-static-title">{t('dashboard.staticInfo')}</span>
+                                <span className={`dashboard-static-chevron ${open ? 'dashboard-static-chevron--open' : ''}`}>
+                                    <ChevronDown size={16} />
+                                </span>
+                            </Disclosure.Button>
+
+                            <Transition
+                                as={Fragment}
+                                show={open}
+                                enter="disclosure-motion"
+                                enterFrom="disclosure-motion--closed"
+                                enterTo="disclosure-motion--open"
+                                leave="disclosure-motion"
+                                leaveFrom="disclosure-motion--open"
+                                leaveTo="disclosure-motion--closed"
+                            >
+                                <Disclosure.Panel className="disclosure-motion-panel static-groups">
+                                    {groupedNutDetails.map((group) => (
+                                        <Disclosure key={group.key}>
+                                            {({ open: groupOpen }) => (
+                                                <div className="static-group">
+                                                    <Disclosure.Button className="static-group-toggle" type="button">
+                                                        <span className="static-group-title-wrap">
+                                                            <span className="static-group-title">{group.label}</span>
+                                                            <span className="static-group-count">{group.entries.length}</span>
+                                                        </span>
+                                                        <span className={`static-group-chevron ${groupOpen ? 'static-group-chevron--open' : ''}`}>
+                                                            <ChevronDown size={14} />
+                                                        </span>
+                                                    </Disclosure.Button>
+
+                                                    <Transition
+                                                        as={Fragment}
+                                                        show={groupOpen}
+                                                        enter="disclosure-motion disclosure-motion--nested"
+                                                        enterFrom="disclosure-motion--closed"
+                                                        enterTo="disclosure-motion--open"
+                                                        leave="disclosure-motion disclosure-motion--nested"
+                                                        leaveFrom="disclosure-motion--open"
+                                                        leaveTo="disclosure-motion--closed"
+                                                    >
+                                                        <Disclosure.Panel className="disclosure-motion-panel disclosure-motion-panel--nested static-grid">
+                                                            {group.entries.map(([fieldName, value]) => (
+                                                                <div key={fieldName} className="static-item">
+                                                                    <span className="static-item-label">{fieldName}</span>
+                                                                    <span className="static-item-value">{value}</span>
+                                                                </div>
+                                                            ))}
+                                                        </Disclosure.Panel>
+                                                    </Transition>
+                                                </div>
+                                            )}
+                                        </Disclosure>
+                                    ))}
+                                </Disclosure.Panel>
+                            </Transition>
+                        </section>
+                    )}
+                </Disclosure>
             )}
         </div>
     );
 }
 
+function resolveNutDetailsGroupKey(fieldName: string): NutDetailsGroupKey {
+    const prefix = fieldName.split('.')[0]?.toLowerCase() ?? '';
+    if (prefix === 'battery') return 'battery';
+    if (prefix === 'input') return 'input';
+    if (prefix === 'output') return 'output';
+    if (prefix === 'driver') return 'driver';
+    if (prefix === 'ups') return 'ups';
+    if (prefix === 'device') return 'device';
+    if (prefix === 'ambient') return 'ambient';
+    return 'other';
+}
 
+function getNutDetailsGroupLabel(groupKey: NutDetailsGroupKey, t: TFunction): string {
+    if (groupKey === 'battery') return t('dashboard.detailGroupBattery', 'Battery');
+    if (groupKey === 'input') return t('dashboard.detailGroupInput', 'Input');
+    if (groupKey === 'output') return t('dashboard.detailGroupOutput', 'Output');
+    if (groupKey === 'driver') return t('dashboard.detailGroupDriver', 'Driver');
+    if (groupKey === 'ups') return t('dashboard.detailGroupUps', 'UPS');
+    if (groupKey === 'device') return t('dashboard.detailGroupDevice', 'Device');
+    if (groupKey === 'ambient') return t('dashboard.detailGroupAmbient', 'Ambient');
+    return t('dashboard.detailGroupOther', 'Other');
+}

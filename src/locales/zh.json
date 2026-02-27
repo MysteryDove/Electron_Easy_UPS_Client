@@ -41,7 +41,15 @@
         "groupBattery": "电池",
         "groupInput": "输入",
         "groupOutput": "输出",
-        "staticInfo": "UPS 详细信息"
+        "staticInfo": "UPS 详细信息",
+        "detailGroupBattery": "电池",
+        "detailGroupInput": "输入",
+        "detailGroupOutput": "输出",
+        "detailGroupDriver": "驱动",
+        "detailGroupUps": "UPS",
+        "detailGroupDevice": "设备",
+        "detailGroupAmbient": "环境",
+        "detailGroupOther": "其他"
     },
     "telemetry": {
         "title": "数据中心",
@@ -159,6 +167,7 @@
     },
     "settings": {
         "title": "设置",
+        "saveSuccess": "设置已保存。",
         "saveFailed": "保存设置失败。",
         "nutConnection": "NUT 连接",
         "reconfigureConnection": "重新配置连接...",
@@ -234,7 +243,9 @@
     },
     "reconnect": {
         "title": "连接丢失",
+        "titleInitializing": "正在等待驱动初始化",
         "messageDegraded": "连接状态异常。正在重试...",
+        "messageInitializing": "正在启动本地 UPS 驱动。冷启动时可能需要一点时间",
         "messageConnecting": "正在尝试重新连接到 NUT 服务器...",
         "lastKnownBattery": "已知最后电池电量：{{percent}}%"
     },
