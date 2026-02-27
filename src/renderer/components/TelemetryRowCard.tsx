@@ -1,6 +1,7 @@
 import React, { useMemo } from 'react';
 import ReactECharts from 'echarts-for-react';
 import { useTranslation } from 'react-i18next';
+import { useTheme } from '../app/providers';
 
 export type TelemetryRowCardProps = {
     title: string;
@@ -153,9 +154,14 @@ export function TelemetryRowCard({
     windowEnd
 }: TelemetryRowCardProps) {
     const { t } = useTranslation();
-    const isDark = document.documentElement.classList.contains('dark');
+    const { resolvedTheme } = useTheme();
+    const isDark = resolvedTheme === 'dark';
     const colorLine = isDark ? '#10a37f' : '#059669';
     const colorArea = isDark ? 'rgba(16, 163, 127, 0.15)' : 'rgba(16, 163, 127, 0.1)';
+    const axisLabelColor = useMemo(
+        () => resolveCssVarColor('--color-text-dim', isDark ? '#94a3b8' : '#64748b'),
+        [isDark],
+    );
 
     const chartOptions = useMemo(() => {
         const windowStartMs = windowStart?.getTime();
@@ -294,7 +300,7 @@ export function TelemetryRowCard({
                 min: hasWindow ? windowStartMs : undefined,
                 max: hasWindow ? windowEndMs : undefined,
                 axisLabel: {
-                    color: 'var(--color-text-dim)',
+                    color: axisLabelColor,
                     fontSize: 10,
                     hideOverlap: true,
                     margin: 8,
@@ -341,7 +347,7 @@ export function TelemetryRowCard({
                 }
             ]
         };
-    }, [data, metricType, colorLine, colorArea, isDark, unit, nominalValue, applyMovingAverage, windowStart, windowEnd]);
+    }, [data, metricType, colorLine, colorArea, isDark, axisLabelColor, unit, nominalValue, applyMovingAverage, windowStart, windowEnd]);
 
     return (
         <div className="telemetry-row-card">
@@ -371,4 +377,14 @@ export function TelemetryRowCard({
             </div>
         </div>
     );
+}
+
+function resolveCssVarColor(variableName: string, fallback: string): string {
+    if (typeof window === 'undefined') {
+        return fallback;
+    }
+    const value = getComputedStyle(document.documentElement)
+        .getPropertyValue(variableName)
+        .trim();
+    return value || fallback;
 }

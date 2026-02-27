@@ -5,6 +5,10 @@ import os from 'node:os';
 import path from 'node:path';
 import { promisify } from 'node:util';
 import type {
+  NutSetupListComPortsResult,
+  NutSetupListSerialDriversResult,
+  NutSetupPrepareLocalDriverPayload,
+  NutSetupPrepareLocalDriverResult,
   NutSetupPrepareLocalNutPayload,
   NutSetupPrepareLocalNutResult,
   NutSetupValidateFolderResult,
@@ -18,12 +22,66 @@ const SNMP_DRIVER_RELATIVE_PATH_CANDIDATES = [
   'bin/snmp-ups.exe',
   'sbin/snmp-ups.exe',
 ];
+const UPSC_RELATIVE_PATH_CANDIDATES = ['bin/upsc.exe', 'sbin/upsc.exe'];
+const SERIAL_DRIVERS = [
+  'apcsmart',
+  'bcmxcp',
+  'belkin',
+  'belkinunv',
+  'bestfcom',
+  'bestfortress',
+  'bestuferrups',
+  'bestups',
+  'bicker_ser',
+  'blazer_ser',
+  'etapro',
+  'everups',
+  'gamatronic',
+  'genericups',
+  'huawei-ups2000',
+  'isbmex',
+  'ivtscd',
+  'liebert',
+  'liebert-esp2',
+  'liebert-gxe',
+  'masterguard',
+  'meanwell_ntu',
+  'metasys',
+  'mge-shut',
+  'mge-utalk',
+  'microdowell',
+  'must_ep2000pro',
+  'nhs_ser',
+  'nutdrv_hashx',
+  'nutdrv_qx',
+  'nutdrv_siemens-sitop',
+  'oneac',
+  'optiups',
+  'powercom',
+  'powerpanel',
+  'powervar_cx_ser',
+  'rhino',
+  'riello_ser',
+  'safenet',
+  'solis',
+  'tripplite',
+  'tripplitesu',
+  'upscode2',
+  'victronups',
+] as const;
 
 const UPS_NAME_PATTERN = /^[a-zA-Z0-9-]+$/;
 const IPV4_OCTET_PATTERN = '(?:25[0-5]|2[0-4]\\d|1\\d\\d|[1-9]?\\d)';
 const SNMP_TARGET_PATTERN = new RegExp(
   `^${IPV4_OCTET_PATTERN}(?:\\.${IPV4_OCTET_PATTERN}){3}(?::([1-9]\\d{0,4}))?$`,
 );
+const COM_PORT_PATTERN = /^COM\d+$/i;
+const SERIAL_DRIVER_SET = new Set<string>(SERIAL_DRIVERS);
+const SERIAL_DRIVER_READY_TIMEOUT_MS = 45 * 1000;
+const SERIAL_DRIVER_READY_POLL_INTERVAL_MS = 1000;
+const UPSC_QUERY_TIMEOUT_MS = 5 * 1000;
+const UPSC_TARGET_HOST = '127.0.0.1:3493';
+const UPS_STATUS_WAIT_TOKEN = 'WAIT';
 
 export async function validateNutFolder(
   folderPath: string,
@@ -71,7 +129,7 @@ export async function prepareLocalNut(
   payload: NutSetupPrepareLocalNutPayload,
 ): Promise<NutSetupPrepareLocalNutResult> {
   try {
-    const normalized = normalizePreparePayload(payload);
+    const normalized = normalizePrepareLocalNutPayload(payload);
     const validationResult = await validateNutFolder(normalized.folderPath);
     if (!validationResult.valid) {
       return {
@@ -91,7 +149,11 @@ export async function prepareLocalNut(
       };
     }
 
-    await writeNutConfigFiles(normalized, !validationResult.writable);
+    await writeNutConfigFilesFromContent({
+      folderPath: normalized.folderPath,
+      upsConf: buildSnmpUpsConf(normalized),
+      requireElevation: !validationResult.writable,
+    });
     return { success: true };
   } catch (error) {
     console.error('[nutSetupService] prepareLocalNut failed', error);
@@ -102,7 +164,152 @@ export async function prepareLocalNut(
   }
 }
 
-type NormalizedPreparePayload = NutSetupPrepareLocalNutPayload & {
+export async function listSerialDrivers(
+  folderPath: string,
+): Promise<NutSetupListSerialDriversResult> {
+  const normalizedFolder = folderPath.trim();
+  if (!normalizedFolder) {
+    return { drivers: [] };
+  }
+
+  const discoveredDrivers = await Promise.all(
+    SERIAL_DRIVERS.map(async (driverName) => {
+      const exists = await doesSerialDriverExist(normalizedFolder, driverName);
+      return exists ? driverName : null;
+    }),
+  );
+
+  return {
+    drivers: discoveredDrivers
+      .filter(
+        (
+          driverName,
+        ): driverName is (typeof SERIAL_DRIVERS)[number] => driverName !== null,
+      ),
+  };
+}
+
+export async function listComPorts(): Promise<NutSetupListComPortsResult> {
+  if (process.platform !== 'win32') {
+    return { ports: [] };
+  }
+
+  const script = '[System.IO.Ports.SerialPort]::GetPortNames()';
+  const { stdout } = await execFileAsync(
+    'powershell.exe',
+    ['-NoProfile', '-WindowStyle', 'Hidden', '-Command', script],
+    {
+      windowsHide: true,
+      timeout: 10 * 1000,
+    },
+  );
+
+  return {
+    ports: parseComPortOutput(stdout),
+  };
+}
+
+export async function prepareLocalDriver(
+  payload: NutSetupPrepareLocalDriverPayload,
+): Promise<NutSetupPrepareLocalDriverResult> {
+  try {
+    const normalized = normalizePrepareDriverPayload(payload);
+    const validationResult = await validateNutFolder(normalized.folderPath);
+    if (!validationResult.valid) {
+      return {
+        success: false,
+        error: `Invalid NUT folder structure. Missing: ${validationResult.missing.join(', ')}`,
+      };
+    }
+
+    const exists = await doesSerialDriverExist(
+      normalized.folderPath,
+      normalized.driver,
+    );
+    if (!exists) {
+      return {
+        success: false,
+        error: `Missing required driver binary: bin/${normalized.driver}.exe or sbin/${normalized.driver}.exe`,
+      };
+    }
+
+    await writeNutConfigFilesFromContent({
+      folderPath: normalized.folderPath,
+      upsConf: buildDriverUpsConf(normalized),
+      requireElevation: !validationResult.writable,
+    });
+    return { success: true };
+  } catch (error) {
+    console.error('[nutSetupService] prepareLocalDriver failed', error);
+    return {
+      success: false,
+      error: error instanceof Error ? error.message : String(error),
+    };
+  }
+}
+
+export async function waitForSerialDriverReady(options: {
+  folderPath: string;
+  upsName: string;
+  timeoutMs?: number;
+  pollIntervalMs?: number;
+}): Promise<void> {
+  const folderPath = options.folderPath?.trim();
+  if (!folderPath) {
+    throw new Error('folderPath is required to wait for serial driver readiness');
+  }
+
+  const upsName = options.upsName?.trim();
+  if (!upsName || !UPS_NAME_PATTERN.test(upsName)) {
+    throw new Error('upsName must use letters, numbers, or hyphens');
+  }
+
+  const upscPath = await findFirstExistingRelativeFile(
+    folderPath,
+    UPSC_RELATIVE_PATH_CANDIDATES,
+  );
+  if (!upscPath) {
+    throw new Error(
+      `Missing required utility binary: ${UPSC_RELATIVE_PATH_CANDIDATES.join(' or ')}`,
+    );
+  }
+
+  const timeoutMs =
+    Number.isFinite(options.timeoutMs) && Number(options.timeoutMs) > 0
+      ? Math.floor(Number(options.timeoutMs))
+      : SERIAL_DRIVER_READY_TIMEOUT_MS;
+  const pollIntervalMs =
+    Number.isFinite(options.pollIntervalMs) && Number(options.pollIntervalMs) > 0
+      ? Math.floor(Number(options.pollIntervalMs))
+      : SERIAL_DRIVER_READY_POLL_INTERVAL_MS;
+
+  const deadline = Date.now() + timeoutMs;
+  let lastReason = 'ups.status is not available yet';
+
+  while (Date.now() <= deadline) {
+    const probeResult = await probeUpsStatusViaUpsc(upscPath, upsName);
+    if (probeResult.status) {
+      if (probeResult.status.toUpperCase() !== UPS_STATUS_WAIT_TOKEN) {
+        return;
+      }
+      lastReason = `ups.status is ${UPS_STATUS_WAIT_TOKEN}`;
+    } else if (probeResult.reason) {
+      lastReason = probeResult.reason;
+    }
+
+    const remainingMs = deadline - Date.now();
+    if (remainingMs <= 0) {
+      break;
+    }
+    await sleep(Math.min(pollIntervalMs, remainingMs));
+  }
+
+  throw new Error(
+    `Timed out waiting for serial driver initialization. Last check: ${lastReason}`,
+  );
+}
+
+type NormalizedPrepareLocalNutPayload = NutSetupPrepareLocalNutPayload & {
   folderPath: string;
   upsName: string;
   port: string;
@@ -110,9 +317,17 @@ type NormalizedPreparePayload = NutSetupPrepareLocalNutPayload & {
   community: string;
 };
 
-function normalizePreparePayload(
+type NormalizedPrepareLocalDriverPayload = NutSetupPrepareLocalDriverPayload & {
+  folderPath: string;
+  upsName: string;
+  driver: string;
+  port: string;
+  ttymode: string;
+};
+
+function normalizePrepareLocalNutPayload(
   payload: NutSetupPrepareLocalNutPayload,
-): NormalizedPreparePayload {
+): NormalizedPrepareLocalNutPayload {
   if (!payload || typeof payload !== 'object') {
     throw new Error('Invalid prepare payload');
   }
@@ -193,16 +408,58 @@ function normalizePreparePayload(
   };
 }
 
-async function writeNutConfigFiles(
-  payload: NormalizedPreparePayload,
-  requireElevation: boolean,
-): Promise<void> {
-  const upsdConfPath = path.join(payload.folderPath, 'etc', 'upsd.conf');
-  const upsConfPath = path.join(payload.folderPath, 'etc', 'ups.conf');
-  const upsdConf = buildUpsdConf();
-  const upsConf = buildUpsConf(payload);
+function normalizePrepareDriverPayload(
+  payload: NutSetupPrepareLocalDriverPayload,
+): NormalizedPrepareLocalDriverPayload {
+  if (!payload || typeof payload !== 'object') {
+    throw new Error('Invalid driver prepare payload');
+  }
 
-  if (!requireElevation) {
+  const folderPath = payload.folderPath?.trim();
+  if (!folderPath) {
+    throw new Error('folderPath is required');
+  }
+
+  const upsName = payload.upsName?.trim();
+  if (!upsName || !UPS_NAME_PATTERN.test(upsName)) {
+    throw new Error('upsName must use letters, numbers, or hyphens');
+  }
+
+  const normalizedDriver = payload.driver?.trim().toLowerCase();
+  if (!normalizedDriver || !SERIAL_DRIVER_SET.has(normalizedDriver)) {
+    throw new Error('driver is not in the supported serial driver list');
+  }
+
+  const port = normalizeComPort(payload.port);
+  if (!port) {
+    throw new Error('port must be a COM port value like COM3');
+  }
+
+  const ttymode = payload.ttymode?.trim() || 'raw';
+
+  return {
+    ...payload,
+    folderPath,
+    upsName,
+    driver: normalizedDriver,
+    port,
+    ttymode,
+  };
+}
+
+async function writeNutConfigFilesFromContent(
+  options: {
+    folderPath: string;
+    upsConf: string;
+    requireElevation: boolean;
+  },
+): Promise<void> {
+  const upsdConfPath = path.join(options.folderPath, 'etc', 'upsd.conf');
+  const upsConfPath = path.join(options.folderPath, 'etc', 'ups.conf');
+  const upsdConf = buildUpsdConf();
+  const upsConf = options.upsConf;
+
+  if (!options.requireElevation) {
     try {
       await fs.writeFile(upsdConfPath, upsdConf, 'ascii');
       await fs.writeFile(upsConfPath, upsConf, 'ascii');
@@ -234,7 +491,7 @@ function buildUpsdConf(): string {
   return ['LISTEN 127.0.0.1 3493', ''].join('\r\n');
 }
 
-function buildUpsConf(payload: NormalizedPreparePayload): string {
+function buildSnmpUpsConf(payload: NormalizedPrepareLocalNutPayload): string {
   const lines = [
     `[${payload.upsName}]`,
     '    driver = snmp-ups',
@@ -265,6 +522,165 @@ function buildUpsConf(payload: NormalizedPreparePayload): string {
   }
 
   return `${lines.join('\r\n')}\r\n`;
+}
+
+function buildDriverUpsConf(payload: NormalizedPrepareLocalDriverPayload): string {
+  const lines = [
+    `[${payload.upsName}]`,
+    `    driver = ${payload.driver}`,
+    `    port = ${payload.port}`,
+  ];
+
+  if (payload.ttymode) {
+    lines.push(`    ttymode = ${sanitizeConfigValue(payload.ttymode)}`);
+  }
+
+  return `${lines.join('\r\n')}\r\n`;
+}
+
+async function doesSerialDriverExist(
+  folderPath: string,
+  driver: string,
+): Promise<boolean> {
+  return Boolean(
+    await findFirstExistingRelativeFile(folderPath, [
+      `bin/${driver}.exe`,
+      `sbin/${driver}.exe`,
+    ]),
+  );
+}
+
+async function probeUpsStatusViaUpsc(
+  upscPath: string,
+  upsName: string,
+): Promise<{ status: string | null; reason?: string }> {
+  const target = `${upsName}@${UPSC_TARGET_HOST}`;
+
+  try {
+    const { stdout, stderr } = await execFileAsync(
+      upscPath,
+      [target, 'ups.status'],
+      {
+        windowsHide: true,
+        timeout: UPSC_QUERY_TIMEOUT_MS,
+      },
+    );
+
+    const status =
+      parseUpsStatusFromUpscOutput(stdout) ??
+      parseUpsStatusFromUpscOutput(stderr);
+    if (status) {
+      return { status };
+    }
+
+    const mergedOutput = `${stdout}\n${stderr}`.trim();
+    return {
+      status: null,
+      reason: mergedOutput
+        ? `ups.status unavailable (${compactSingleLine(mergedOutput)})`
+        : 'ups.status unavailable',
+    };
+  } catch (error) {
+    return {
+      status: null,
+      reason: `upsc query failed (${summarizeExecFailure(error)})`,
+    };
+  }
+}
+
+function parseUpsStatusFromUpscOutput(output: string): string | null {
+  const lines = output
+    .split(/\r?\n/u)
+    .map((line) => line.trim())
+    .filter(Boolean);
+
+  if (lines.length === 0) {
+    return null;
+  }
+
+  for (const line of lines) {
+    const match = line.match(/^ups\.status\s*:\s*(.+)$/iu);
+    if (match && match[1].trim()) {
+      return match[1].trim();
+    }
+  }
+
+  for (const line of lines) {
+    if (/^error:/iu.test(line)) {
+      continue;
+    }
+    if (!line.includes(':')) {
+      return line;
+    }
+  }
+
+  return null;
+}
+
+function summarizeExecFailure(error: unknown): string {
+  if (!(error instanceof Error)) {
+    return String(error);
+  }
+
+  const execError = error as Error & {
+    code?: number | string;
+    stdout?: string;
+    stderr?: string;
+  };
+  const details: string[] = [];
+
+  if (execError.code !== undefined) {
+    details.push(`code ${String(execError.code)}`);
+  }
+  if (typeof execError.stderr === 'string' && execError.stderr.trim()) {
+    details.push(`stderr ${compactSingleLine(execError.stderr)}`);
+  }
+  if (typeof execError.stdout === 'string' && execError.stdout.trim()) {
+    details.push(`stdout ${compactSingleLine(execError.stdout)}`);
+  }
+
+  if (details.length > 0) {
+    return details.join('; ');
+  }
+
+  return compactSingleLine(execError.message);
+}
+
+function compactSingleLine(value: string): string {
+  const collapsed = value.replace(/\s+/g, ' ').trim();
+  if (collapsed.length <= 180) {
+    return collapsed;
+  }
+  return `${collapsed.slice(0, 180)}...`;
+}
+
+function parseComPortOutput(stdout: string): string[] {
+  const deduped = new Set<string>();
+  for (const line of stdout.split(/\r?\n/u)) {
+    const normalized = normalizeComPort(line);
+    if (normalized) {
+      deduped.add(normalized);
+    }
+  }
+
+  return [...deduped].sort(sortComPorts);
+}
+
+function normalizeComPort(value: unknown): string | null {
+  if (typeof value !== 'string') {
+    return null;
+  }
+  const candidate = value.trim().toUpperCase();
+  if (!COM_PORT_PATTERN.test(candidate)) {
+    return null;
+  }
+  return candidate;
+}
+
+function sortComPorts(left: string, right: string): number {
+  const leftValue = Number(left.replace(/^COM/i, ''));
+  const rightValue = Number(right.replace(/^COM/i, ''));
+  return leftValue - rightValue;
 }
 
 async function runElevatedPowerShell(script: string): Promise<void> {
@@ -479,4 +895,10 @@ async function findFirstExistingRelativeFile(
   }
 
   return null;
+}
+
+function sleep(ms: number): Promise<void> {
+  return new Promise((resolve) => {
+    setTimeout(resolve, ms);
+  });
 }

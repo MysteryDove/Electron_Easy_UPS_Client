@@ -22,10 +22,9 @@ const INITIAL_RECONNECT_DELAY_MS = 1000;
 const MAX_RECONNECT_DELAY_MS = 30000;
 const LOCAL_DRIVER_START_DELAY_MS = 1200;
 const LOCAL_UPSD_START_DELAY_MS = 1000;
-const LOCAL_DRIVER_RELATIVE_PATH_CANDIDATES = [
-  'bin/snmp-ups.exe',
-  'sbin/snmp-ups.exe',
-];
+const DEFAULT_LOCAL_DRIVER_EXECUTABLE = 'snmp-ups';
+const MAX_CAPTURED_PROCESS_LOG_LINES = 240;
+const MAX_CAPTURED_PROCESS_LOG_LINE_LENGTH = 2000;
 const execFileAsync = promisify(execFile);
 const LOG_LEVEL_PRIORITY: Record<DebugLogLevel, number> = {
   off: 0,
@@ -50,6 +49,13 @@ type ExistingLocalNutProcessIds = {
   upsdPids: number[];
 };
 
+type LocalProcessOutputCapture = {
+  stdout: string[];
+  stderr: string[];
+  stdoutRemainder: string;
+  stderrRemainder: string;
+};
+
 export class NutPollingService {
   private readonly configStore: ConfigStore;
   private readonly telemetryRepository: TelemetryRepository;
@@ -65,6 +71,10 @@ export class NutPollingService {
   private pollInFlight = false;
   private localDriverProcess: ChildProcess | null = null;
   private localUpsdProcess: ChildProcess | null = null;
+  private readonly localProcessOutputCapture = new WeakMap<
+    ChildProcess,
+    LocalProcessOutputCapture
+  >();
   private availableFields: Set<string> = new Set();
   private staticFields: Set<string> = new Set();
   private dynamicFields: Set<string> = new Set();
@@ -273,7 +283,10 @@ export class NutPollingService {
       );
     }
 
-    const driverPath = await this.resolveLocalDriverPath(folderPath);
+    const {
+      driverPath,
+      driverExecutable,
+    } = await this.resolveLocalDriverPath(folderPath, config.nut.upsName);
     const upsdPath = path.join(folderPath, 'sbin', 'upsd.exe');
     await assertFileExists(upsdPath, 'upsd.exe');
 
@@ -283,27 +296,62 @@ export class NutPollingService {
     );
 
     if (existingProcesses.driverPids.length > 0) {
-      this.log('warn', 'Reusing existing local snmp-ups process', {
+      this.log('warn', 'Reusing existing local NUT driver process', {
+        driverExecutable,
         driverPath,
         pids: existingProcesses.driverPids,
       });
     } else {
-      this.log('info', 'Starting local snmp-ups process', {
+      const driverArgs = ['-a', config.nut.upsName];
+      const driverCommandLine = formatCommandLineForLog(driverPath, driverArgs);
+      this.log('info', 'Starting local NUT driver process', {
+        driverExecutable,
         driverPath,
         upsName: config.nut.upsName,
+        commandLine: driverCommandLine,
       });
 
-      const driverProcess = spawn(driverPath, ['-a', config.nut.upsName], {
+      const driverProcess = spawn(driverPath, driverArgs, {
         cwd: folderPath,
         windowsHide: true,
-        stdio: 'ignore',
+        stdio: ['ignore', 'pipe', 'pipe'],
       });
       this.localDriverProcess = driverProcess;
-      this.attachLocalProcessHandlers(driverProcess, 'snmp-ups');
+      this.attachLocalProcessOutputCapture(driverProcess, 'driver');
+      this.attachLocalProcessHandlers(driverProcess, 'driver', {
+        commandLine: driverCommandLine,
+        cwd: folderPath,
+      });
 
       await sleep(LOCAL_DRIVER_START_DELAY_MS);
       if (driverProcess.exitCode !== null) {
-        throw new Error(`snmp-ups exited early with code ${driverProcess.exitCode}`);
+        const attachedDriverPids = await findWindowsProcessPidsByExecutablePath(
+          driverPath,
+          `-a ${config.nut.upsName}`,
+        );
+        if (driverProcess.exitCode === 0 && attachedDriverPids.length > 0) {
+          this.log(
+            'warn',
+            'Local NUT driver launcher exited but active driver process was detected',
+            {
+              driverExecutable,
+              commandLine: driverCommandLine,
+              attachedDriverPids,
+            },
+          );
+          this.logCapturedProcessOutputIfAvailable(driverProcess, 'driver');
+          this.localDriverProcess = null;
+        } else {
+          const captured = this.getCapturedProcessOutput(driverProcess);
+          throw new Error(
+            formatLocalProcessEarlyExitError(
+              driverExecutable,
+              driverProcess.exitCode,
+              driverCommandLine,
+              captured,
+            ),
+          );
+        }
       }
     }
 
@@ -315,18 +363,35 @@ export class NutPollingService {
       return;
     }
 
-    this.log('info', 'Starting local upsd process', { upsdPath });
-    const upsdProcess = spawn(upsdPath, [], {
+    const upsdArgs: string[] = [];
+    const upsdCommandLine = formatCommandLineForLog(upsdPath, upsdArgs);
+    this.log('info', 'Starting local upsd process', {
+      upsdPath,
+      commandLine: upsdCommandLine,
+    });
+    const upsdProcess = spawn(upsdPath, upsdArgs, {
       cwd: folderPath,
       windowsHide: true,
-      stdio: 'ignore',
+      stdio: ['ignore', 'pipe', 'pipe'],
     });
     this.localUpsdProcess = upsdProcess;
-    this.attachLocalProcessHandlers(upsdProcess, 'upsd');
+    this.attachLocalProcessOutputCapture(upsdProcess, 'upsd');
+    this.attachLocalProcessHandlers(upsdProcess, 'upsd', {
+      commandLine: upsdCommandLine,
+      cwd: folderPath,
+    });
 
     await sleep(LOCAL_UPSD_START_DELAY_MS);
     if (upsdProcess.exitCode !== null) {
-      throw new Error(`upsd exited early with code ${upsdProcess.exitCode}`);
+      const captured = this.getCapturedProcessOutput(upsdProcess);
+      throw new Error(
+        formatLocalProcessEarlyExitError(
+          'upsd',
+          upsdProcess.exitCode,
+          upsdCommandLine,
+          captured,
+        ),
+      );
     }
   }
 
@@ -358,35 +423,167 @@ export class NutPollingService {
     ]);
   }
 
-  private async resolveLocalDriverPath(folderPath: string): Promise<string> {
-    for (const relativePath of LOCAL_DRIVER_RELATIVE_PATH_CANDIDATES) {
+  private async resolveLocalDriverPath(
+    folderPath: string,
+    upsName: string,
+  ): Promise<{ driverPath: string; driverExecutable: string }> {
+    const configuredDriver =
+      await readDriverExecutableFromUpsConf(folderPath, upsName);
+    const driverExecutable = configuredDriver ?? DEFAULT_LOCAL_DRIVER_EXECUTABLE;
+    const relativeCandidates = [
+      `bin/${driverExecutable}.exe`,
+      `sbin/${driverExecutable}.exe`,
+    ];
+
+    for (const relativePath of relativeCandidates) {
       const fullPath = path.join(folderPath, relativePath);
       if (await fileExists(fullPath)) {
-        return fullPath;
+        return { driverPath: fullPath, driverExecutable };
       }
     }
 
     throw new Error(
-      `snmp-ups.exe not found in ${LOCAL_DRIVER_RELATIVE_PATH_CANDIDATES.join(' or ')}`,
+      `${driverExecutable}.exe not found in ${relativeCandidates.join(' or ')}`,
     );
   }
 
   private attachLocalProcessHandlers(
     processRef: ChildProcess,
-    processName: 'snmp-ups' | 'upsd',
+    processName: 'driver' | 'upsd',
+    metadata?: {
+      commandLine?: string;
+      cwd?: string;
+    },
   ): void {
     processRef.on('error', (error) => {
-      this.log('error', `${processName} process error`, error);
+      this.log('error', `${processName} process error`, {
+        error,
+        ...(metadata?.commandLine ? { commandLine: metadata.commandLine } : {}),
+        ...(metadata?.cwd ? { cwd: metadata.cwd } : {}),
+      });
+      this.logCapturedProcessOutputIfAvailable(processRef, processName);
     });
     processRef.on('exit', (code, signal) => {
-      this.log('warn', `${processName} process exited`, { code, signal });
-      if (processName === 'snmp-ups' && this.localDriverProcess === processRef) {
+      this.log('warn', `${processName} process exited`, {
+        code,
+        signal,
+        ...(metadata?.commandLine ? { commandLine: metadata.commandLine } : {}),
+        ...(metadata?.cwd ? { cwd: metadata.cwd } : {}),
+      });
+      this.logCapturedProcessOutputIfAvailable(processRef, processName);
+      if (processName === 'driver' && this.localDriverProcess === processRef) {
         this.localDriverProcess = null;
       }
       if (processName === 'upsd' && this.localUpsdProcess === processRef) {
         this.localUpsdProcess = null;
       }
     });
+  }
+
+  private attachLocalProcessOutputCapture(
+    processRef: ChildProcess,
+    processName: 'driver' | 'upsd',
+  ): void {
+    const capture: LocalProcessOutputCapture = {
+      stdout: [],
+      stderr: [],
+      stdoutRemainder: '',
+      stderrRemainder: '',
+    };
+    this.localProcessOutputCapture.set(processRef, capture);
+
+    processRef.stdout?.setEncoding('utf8');
+    processRef.stdout?.on('data', (chunk: string | Buffer) => {
+      this.captureLocalProcessChunk(capture, processName, 'stdout', chunk);
+    });
+
+    processRef.stderr?.setEncoding('utf8');
+    processRef.stderr?.on('data', (chunk: string | Buffer) => {
+      this.captureLocalProcessChunk(capture, processName, 'stderr', chunk);
+    });
+  }
+
+  private captureLocalProcessChunk(
+    capture: LocalProcessOutputCapture,
+    processName: 'driver' | 'upsd',
+    stream: 'stdout' | 'stderr',
+    chunk: string | Buffer,
+  ): void {
+    const text = typeof chunk === 'string' ? chunk : chunk.toString('utf8');
+    if (!text) {
+      return;
+    }
+
+    const remainderField =
+      stream === 'stdout' ? 'stdoutRemainder' : 'stderrRemainder';
+    const linesField = stream === 'stdout' ? 'stdout' : 'stderr';
+    const combined = `${capture[remainderField]}${text}`;
+    const lines = combined.split(/\r?\n/u);
+    capture[remainderField] = lines.pop() ?? '';
+
+    for (const rawLine of lines) {
+      const normalizedLine = rawLine.trimEnd();
+      if (!normalizedLine) {
+        continue;
+      }
+
+      const truncatedLine =
+        normalizedLine.length > MAX_CAPTURED_PROCESS_LOG_LINE_LENGTH
+          ? `${normalizedLine.slice(0, MAX_CAPTURED_PROCESS_LOG_LINE_LENGTH)} ...`
+          : normalizedLine;
+
+      capture[linesField].push(truncatedLine);
+      if (capture[linesField].length > MAX_CAPTURED_PROCESS_LOG_LINES) {
+        capture[linesField].splice(
+          0,
+          capture[linesField].length - MAX_CAPTURED_PROCESS_LOG_LINES,
+        );
+      }
+
+      if (this.shouldLog('debug')) {
+        this.log('debug', `[local ${processName} ${stream}] ${truncatedLine}`);
+      }
+    }
+  }
+
+  private getCapturedProcessOutput(
+    processRef: ChildProcess,
+  ): { stdout: string; stderr: string } {
+    const capture = this.localProcessOutputCapture.get(processRef);
+    if (!capture) {
+      return { stdout: '', stderr: '' };
+    }
+
+    const stdoutLines = [...capture.stdout];
+    const stderrLines = [...capture.stderr];
+    if (capture.stdoutRemainder.trim()) {
+      stdoutLines.push(capture.stdoutRemainder.trimEnd());
+    }
+    if (capture.stderrRemainder.trim()) {
+      stderrLines.push(capture.stderrRemainder.trimEnd());
+    }
+
+    return {
+      stdout: stdoutLines.join('\n'),
+      stderr: stderrLines.join('\n'),
+    };
+  }
+
+  private logCapturedProcessOutputIfAvailable(
+    processRef: ChildProcess,
+    processName: 'driver' | 'upsd',
+  ): void {
+    if (!this.shouldLog('debug')) {
+      return;
+    }
+
+    const captured = this.getCapturedProcessOutput(processRef);
+    if (captured.stdout) {
+      this.log('debug', `[local ${processName}] captured stdout`, captured.stdout);
+    }
+    if (captured.stderr) {
+      this.log('debug', `[local ${processName}] captured stderr`, captured.stderr);
+    }
   }
 
   private startPollingTimer(intervalMs: number): void {
@@ -605,6 +802,116 @@ export class NutPollingService {
 
     console.debug(prefix, message, payload ?? '');
   }
+}
+
+async function readDriverExecutableFromUpsConf(
+  folderPath: string,
+  upsName: string,
+): Promise<string | null> {
+  const upsConfPath = path.join(folderPath, 'etc', 'ups.conf');
+  let upsConfContent: string;
+  try {
+    upsConfContent = await fs.readFile(upsConfPath, 'utf8');
+  } catch {
+    return null;
+  }
+
+  return parseDriverExecutableFromUpsConf(upsConfContent, upsName);
+}
+
+function parseDriverExecutableFromUpsConf(
+  upsConfContent: string,
+  upsName: string,
+): string | null {
+  const normalizedUpsName = upsName.trim().toLowerCase();
+  if (!normalizedUpsName) {
+    return null;
+  }
+
+  let activeSection = '';
+  for (const rawLine of upsConfContent.split(/\r?\n/u)) {
+    const commentIndex = rawLine.search(/[;#]/u);
+    const line =
+      (commentIndex >= 0 ? rawLine.slice(0, commentIndex) : rawLine).trim();
+    if (!line) {
+      continue;
+    }
+
+    const sectionMatch = line.match(/^\[([^\]]+)\]$/u);
+    if (sectionMatch) {
+      activeSection = sectionMatch[1].trim().toLowerCase();
+      continue;
+    }
+
+    if (activeSection !== normalizedUpsName) {
+      continue;
+    }
+
+    const driverMatch = line.match(/^driver\s*=\s*(.+)$/iu);
+    if (!driverMatch) {
+      continue;
+    }
+
+    const driverExecutable = sanitizeDriverExecutable(driverMatch[1]);
+    if (driverExecutable) {
+      return driverExecutable;
+    }
+  }
+
+  return null;
+}
+
+function sanitizeDriverExecutable(rawValue: string): string | null {
+  const normalized = rawValue
+    .trim()
+    .replace(/^["']|["']$/gu, '')
+    .replace(/\.exe$/iu, '');
+  if (!normalized) {
+    return null;
+  }
+
+  if (!/^[a-zA-Z0-9._-]+$/u.test(normalized)) {
+    return null;
+  }
+
+  return normalized;
+}
+
+function formatCommandLineForLog(
+  executablePath: string,
+  args: string[],
+): string {
+  const escapedExecutable = quoteCommandLineSegment(executablePath);
+  const escapedArgs = args.map(quoteCommandLineSegment).join(' ');
+  return escapedArgs ? `${escapedExecutable} ${escapedArgs}` : escapedExecutable;
+}
+
+function quoteCommandLineSegment(value: string): string {
+  if (!/[\s"]/u.test(value)) {
+    return value;
+  }
+  return `"${value.replace(/"/g, '\\"')}"`;
+}
+
+function formatLocalProcessEarlyExitError(
+  processLabel: string,
+  exitCode: number | null,
+  commandLine: string,
+  capturedOutput: { stdout: string; stderr: string },
+): string {
+  const parts = [
+    `${processLabel} exited early with code ${String(exitCode)}`,
+    `command: ${commandLine}`,
+  ];
+
+  if (capturedOutput.stdout) {
+    parts.push(`stdout:\n${capturedOutput.stdout}`);
+  }
+  if (capturedOutput.stderr) {
+    parts.push(`stderr:\n${capturedOutput.stderr}`);
+  }
+
+  return parts.join('\n');
 }
 
 function prettyJson(payload: unknown): string {

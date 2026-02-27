@@ -7,7 +7,7 @@
   "private": true,
   "scripts": {
     "start": "electron-forge start",
-    "start:reset-settings": "set ELECTRON_UPS_RESET_SETTINGS_ON_START=1&& electron-forge start",
+    "start:reset-settings": "set ELECTRON_UPS_RESET_SETTINGS_ON_START=1&& set ELECTRON_UPS_DEBUG_LEVEL_ON_START=debug&& electron-forge start",
     "package": "electron-forge package",
     "package:win": "electron-forge package --platform=win32 --arch=x64",
     "make": "npm run make:nsis:full",

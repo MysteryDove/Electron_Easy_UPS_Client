@@ -12,6 +12,11 @@ import {
   type WizardTestConnectionResult,
   type WizardCompletePayload,
   type NutSetupChooseFolderResult,
+  type NutSetupListComPortsResult,
+  type NutSetupListSerialDriversPayload,
+  type NutSetupListSerialDriversResult,
+  type NutSetupPrepareLocalDriverPayload,
+  type NutSetupPrepareLocalDriverResult,
   type NutSetupValidateFolderPayload,
   type NutSetupValidateFolderResult,
   type NutSetupPrepareLocalNutPayload,
@@ -54,6 +59,16 @@ const electronApi = {
       payload: NutSetupPrepareLocalNutPayload,
     ): Promise<NutSetupPrepareLocalNutResult> =>
       ipcRenderer.invoke(IPC_CHANNELS.nutSetupPrepareLocalNut, payload),
+    listSerialDrivers: (
+      payload: NutSetupListSerialDriversPayload,
+    ): Promise<NutSetupListSerialDriversResult> =>
+      ipcRenderer.invoke(IPC_CHANNELS.nutSetupListSerialDrivers, payload),
+    listComPorts: (): Promise<NutSetupListComPortsResult> =>
+      ipcRenderer.invoke(IPC_CHANNELS.nutSetupListComPorts),
+    prepareLocalDriver: (
+      payload: NutSetupPrepareLocalDriverPayload,
+    ): Promise<NutSetupPrepareLocalDriverResult> =>
+      ipcRenderer.invoke(IPC_CHANNELS.nutSetupPrepareLocalDriver, payload),
   },
   nut: {
     getState: (): Promise<{ state: import('./main/ipc/ipcEvents').ConnectionState, staticData: Record<string, string> | null }> =>

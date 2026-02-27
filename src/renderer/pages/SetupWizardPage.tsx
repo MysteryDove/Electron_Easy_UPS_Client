@@ -4,27 +4,28 @@ import { useAppConfig } from '../app/providers';
 import {
   XCircle,
   CheckCircle2,
-  Check,
-  ShieldAlert,
-  Download,
-  FolderOpen,
-  Router,
-  MonitorCog,
 } from 'lucide-react';
 import { useNavigate as routerUseNavigate } from 'react-router-dom';
 import type {
+  NutSetupPrepareLocalDriverPayload,
+  NutSetupPrepareLocalDriverResult,
   NutSetupPrepareLocalNutPayload,
   NutSetupValidateFolderResult,
 } from '../../main/ipc/ipcChannels';
+import { ChooseSetupModeStep } from './setupWizard/ChooseSetupModeStep';
+import { NutSetupStep } from './setupWizard/NutSetupStep';
+import { WizardSteps } from './setupWizard/WizardSteps';
+import type {
+  AuthProtocol,
+  InstallStatus,
+  PrivProtocol,
+  SecLevel,
+  SetupMode,
+  SnmpVersion,
+  TestStatus,
+  WizardStep,
+} from './setupWizard/types';
 
-type TestStatus = 'idle' | 'testing' | 'success' | 'error';
-type InstallStatus = 'idle' | 'installing' | 'success' | 'error';
-type WizardStep = 'choose' | 'nutSetup' | 'connect' | 'map' | 'line';
-type SetupMode = 'directNut' | 'snmpSetup';
-type SnmpVersion = 'v1' | 'v2c' | 'v3';
-type SecLevel = 'noAuthNoPriv' | 'authNoPriv' | 'authPriv';
-type AuthProtocol = 'MD5' | 'SHA';
-type PrivProtocol = 'DES' | 'AES';
 
 const DEFAULT_MAPPING: Record<string, string> = {
   battery_voltage: 'battery.voltage',
@@ -47,64 +48,7 @@ const IPV4_OCTET_PATTERN = '(?:25[0-5]|2[0-4]\\d|1\\d\\d|[1-9]?\\d)';
 const SNMP_TARGET_PATTERN = new RegExp(
   `^${IPV4_OCTET_PATTERN}(?:\\.${IPV4_OCTET_PATTERN}){3}(?::([1-9]\\d{0,4}))?$`,
 );
-
-function WizardSteps({
-  currentStep,
-  mode,
-}: {
-  currentStep: Exclude<WizardStep, 'choose'>;
-  mode: SetupMode;
-}) {
-  const { t } = useTranslation();
-  const steps =
-    mode === 'snmpSetup'
-      ? [
-        { id: 'nutSetup', label: t('wizard.stepSetup', 'NUT Setup') },
-        { id: 'connect', label: t('wizard.stepConnect', 'Connect') },
-        { id: 'map', label: t('wizard.stepMap', 'Map') },
-        { id: 'line', label: t('wizard.stepLine', 'Line') },
-      ]
-      : [
-        { id: 'connect', label: t('wizard.stepConnect', 'Connect') },
-        { id: 'map', label: t('wizard.stepMap', 'Map') },
-        { id: 'line', label: t('wizard.stepLine', 'Line') },
-      ];
-
-  const currentIndex = steps.findIndex((step) => step.id === currentStep);
-
-  return (
-    <div className="wizard-steps">
-      {steps.map((step, index) => {
-        const isCompleted = index < currentIndex;
-        const isActive = index === currentIndex;
-        const className = isCompleted
-          ? 'wizard-step wizard-step--completed'
-          : isActive
-            ? 'wizard-step wizard-step--active'
-            : 'wizard-step';
-
-        return (
-          <div
-            key={step.id}
-            style={{ display: 'flex', alignItems: 'center', gap: '12px', flexShrink: 0 }}
-          >
-            <div className={className}>
-              <div className="wizard-step-circle">
-                {isCompleted ? <Check size={14} /> : String(index + 1)}
-              </div>
-              <span>{step.label}</span>
-            </div>
-            {index < steps.length - 1 && (
-              <div
-                className={`wizard-step-separator ${isCompleted ? 'wizard-step-separator--active' : ''}`}
-              />
-            )}
-          </div>
-        );
-      })}
-    </div>
-  );
-}
+const COM_PORT_PATTERN = /^COM\d+$/i;
 
 export function SetupWizardPage() {
   const navigate = routerUseNavigate();
@@ -163,6 +107,12 @@ export function SetupWizardPage() {
   const [mibs, setMibs] = useState('auto');
   const [community, setCommunity] = useState('public');
   const [pollfreq, setPollfreq] = useState(5);
+  const [driverName, setDriverName] = useState('');
+  const [driverPort, setDriverPort] = useState('');
+  const [ttymode, setTtymode] = useState('raw');
+  const [availableDrivers, setAvailableDrivers] = useState<string[]>([]);
+  const [availableComPorts, setAvailableComPorts] = useState<string[]>([]);
+  const [driverFilter, setDriverFilter] = useState('');
 
   const [secLevel, setSecLevel] = useState<SecLevel>('noAuthNoPriv');
   const [secName, setSecName] = useState('');
@@ -173,9 +123,20 @@ export function SetupWizardPage() {
 
   const [installStatus, setInstallStatus] = useState<InstallStatus>('idle');
   const [installError, setInstallError] = useState<string | null>(null);
+  const [installErrorDetails, setInstallErrorDetails] = useState<string | null>(null);
 
+  const normalizedDriverName = typeof driverName === 'string' ? driverName : '';
+  const normalizedDriverFilter =
+    typeof driverFilter === 'string' ? driverFilter : '';
+  const normalizedTtymode = typeof ttymode === 'string' ? ttymode : '';
   const upsNameValid = UPS_NAME_PATTERN.test(upsName);
   const snmpTargetValid = isValidSnmpTarget(snmpTarget);
+  const normalizedDriverPort = normalizeComPort(driverPort);
+  const driverNameValid =
+    normalizedDriverName.trim().length > 0 &&
+    availableDrivers.includes(normalizedDriverName);
+  const driverPortValid = normalizedDriverPort !== null;
+  const ttymodeValid = normalizedTtymode.trim().length > 0;
   const pollfreqValid = Number.isInteger(pollfreq) && pollfreq >= 3 && pollfreq <= 15;
   const authRequired = snmpVersion === 'v3' && (secLevel === 'authNoPriv' || secLevel === 'authPriv');
   const privRequired = snmpVersion === 'v3' && secLevel === 'authPriv';
@@ -198,6 +159,55 @@ export function SetupWizardPage() {
     v3Valid &&
     !validatingFolder &&
     installStatus !== 'installing';
+
+  const canPrepareLocalDriver =
+    isFolderValid &&
+    upsNameValid &&
+    driverNameValid &&
+    driverPortValid &&
+    ttymodeValid &&
+    !validatingFolder &&
+    installStatus !== 'installing';
+
+  const filteredDrivers = availableDrivers.filter((candidateDriver) =>
+    candidateDriver.toLowerCase().includes(normalizedDriverFilter.trim().toLowerCase()),
+  );
+
+  const resolveSerialDriverInstallErrorMessage = useCallback((
+    result: NutSetupPrepareLocalDriverResult,
+    selectedPortRaw: string,
+  ): string => {
+    const selectedPort = normalizeComPort(selectedPortRaw) ?? selectedPortRaw.trim();
+    const fallback =
+      result.error ?? 'Failed to configure and start local NUT serial driver';
+
+    switch (result.errorCode) {
+      case 'SERIAL_COM_PORT_ACCESS':
+        return t(
+          'wizard.serialComPortAccess',
+          'Unable to open {{port}}. The port is in use or access is denied. Close other serial software and retry.',
+          { port: selectedPort || 'the selected COM port' },
+        );
+      case 'SERIAL_COM_PORT_MISSING':
+        return t(
+          'wizard.serialComPortMissing',
+          '{{port}} is no longer available. Reconnect the serial cable, refresh COM ports, and retry.',
+          { port: selectedPort || 'The selected COM port' },
+        );
+      case 'SERIAL_DRIVER_INIT_TIMEOUT':
+        return t(
+          'wizard.serialDriverInitTimeout',
+          'Driver started, but UPS status did not leave WAIT in time. Check COM port, cable, and selected driver.',
+        );
+      case 'SERIAL_DRIVER_STARTUP_FAILED':
+        return t(
+          'wizard.serialDriverStartupFailed',
+          'Serial driver failed to start. Check port and driver settings, then retry.',
+        );
+      default:
+        return fallback;
+    }
+  }, [t]);
 
   const handleTestConnection = useCallback(async () => {
     setTestStatus('testing');
@@ -256,9 +266,9 @@ export function SetupWizardPage() {
         upsName,
         mapping: cleanMapping,
         line: { nominalVoltage, nominalFrequency },
-        launchLocalComponents: mode === 'snmpSetup',
+        launchLocalComponents: mode !== 'directNut',
         localNutFolderPath:
-          mode === 'snmpSetup' ? nutFolderPath : undefined,
+          mode !== 'directNut' ? nutFolderPath : undefined,
       });
 
       await refreshConfig();
@@ -282,9 +292,71 @@ export function SetupWizardPage() {
     refreshConfig,
   ]);
 
+  const handlePrepareLocalSuccess = useCallback(() => {
+    setInstallStatus('success');
+    setInstallError(null);
+    setInstallErrorDetails(null);
+    setHost('127.0.0.1');
+    setPort(3493);
+    setTestStatus('idle');
+    setTestError(null);
+    setUpsDescription(null);
+    window.setTimeout(() => {
+      setStep('connect');
+    }, 900);
+  }, []);
+
+  const refreshSerialSetupOptions = useCallback(async (folderPath: string) => {
+    const [driversResult, portsResult] = await Promise.all([
+      window.electronApi.nutSetup.listSerialDrivers({ folderPath }),
+      window.electronApi.nutSetup.listComPorts(),
+    ]);
+
+    setAvailableDrivers(driversResult.drivers);
+    setAvailableComPorts(portsResult.ports);
+
+    setDriverName((previousDriverName) => {
+      if (previousDriverName && driversResult.drivers.includes(previousDriverName)) {
+        return previousDriverName;
+      }
+      return driversResult.drivers[0] ?? '';
+    });
+
+    setDriverPort((previousDriverPort) => {
+      const previousNormalizedPort = normalizeComPort(previousDriverPort);
+      if (previousNormalizedPort && portsResult.ports.includes(previousNormalizedPort)) {
+        return previousNormalizedPort;
+      }
+      return portsResult.ports[0] ?? previousDriverPort;
+    });
+  }, []);
+
+  const handleRefreshComPorts = useCallback(async () => {
+    if (mode !== 'serialSetup') {
+      return;
+    }
+
+    try {
+      const result = await window.electronApi.nutSetup.listComPorts();
+      setAvailableComPorts(result.ports);
+      setDriverPort((previousDriverPort) => {
+        const previousNormalizedPort = normalizeComPort(previousDriverPort);
+        if (previousNormalizedPort && result.ports.includes(previousNormalizedPort)) {
+          return previousNormalizedPort;
+        }
+        return result.ports[0] ?? previousDriverPort;
+      });
+    } catch (err) {
+      setInstallStatus('error');
+      setInstallError(err instanceof Error ? err.message : 'Failed to refresh COM ports');
+    }
+  }, [mode]);
+
   const handleChooseNutFolder = useCallback(async () => {
     setInstallStatus('idle');
     setInstallError(null);
+    setInstallErrorDetails(null);
+    setDriverFilter('');
 
     try {
       const selection = await window.electronApi.nutSetup.chooseFolder();
@@ -294,20 +366,32 @@ export function SetupWizardPage() {
 
       setNutFolderPath(selection.folderPath);
       setFolderValidation(null);
+      if (mode === 'serialSetup') {
+        setAvailableDrivers([]);
+        setAvailableComPorts([]);
+      }
       setValidatingFolder(true);
 
       const validation = await window.electronApi.nutSetup.validateFolder({
         folderPath: selection.folderPath,
       });
       setFolderValidation(validation);
+
+      if (validation.valid && mode === 'serialSetup') {
+        await refreshSerialSetupOptions(selection.folderPath);
+      }
     } catch (err) {
       setFolderValidation(null);
+      if (mode === 'serialSetup') {
+        setAvailableDrivers([]);
+        setAvailableComPorts([]);
+      }
       setInstallStatus('error');
       setInstallError(err instanceof Error ? err.message : 'Failed to choose folder');
     } finally {
       setValidatingFolder(false);
     }
-  }, []);
+  }, [mode, refreshSerialSetupOptions]);
 
   const handlePrepareLocalNut = useCallback(async () => {
     if (!canPrepareLocalNut) {
@@ -316,6 +400,7 @@ export function SetupWizardPage() {
 
     setInstallStatus('installing');
     setInstallError(null);
+    setInstallErrorDetails(null);
 
     try {
       const payload: NutSetupPrepareLocalNutPayload = {
@@ -347,22 +432,15 @@ export function SetupWizardPage() {
       if (!result.success) {
         setInstallStatus('error');
         setInstallError(result.error ?? 'Failed to configure and start local NUT');
+        setInstallErrorDetails(null);
         return;
       }
 
-      setInstallStatus('success');
-      setInstallError(null);
-      setHost('127.0.0.1');
-      setPort(3493);
-      setTestStatus('idle');
-      setTestError(null);
-      setUpsDescription(null);
-      window.setTimeout(() => {
-        setStep('connect');
-      }, 900);
+      handlePrepareLocalSuccess();
     } catch (err) {
       setInstallStatus('error');
       setInstallError(err instanceof Error ? err.message : 'Failed to configure and start local NUT');
+      setInstallErrorDetails(null);
     }
   }, [
     canPrepareLocalNut,
@@ -379,457 +457,224 @@ export function SetupWizardPage() {
     authPassword,
     privProtocol,
     privPassword,
+    handlePrepareLocalSuccess,
+  ]);
+
+  const handlePrepareLocalDriver = useCallback(async () => {
+    if (!canPrepareLocalDriver) {
+      return;
+    }
+
+    setInstallStatus('installing');
+    setInstallError(null);
+    setInstallErrorDetails(null);
+
+    try {
+      const payload: NutSetupPrepareLocalDriverPayload = {
+        folderPath: nutFolderPath,
+        upsName,
+        driver: normalizedDriverName,
+        port: normalizedDriverPort ?? driverPort,
+        ttymode: normalizedTtymode.trim() || 'raw',
+      };
+
+      const result = await window.electronApi.nutSetup.prepareLocalDriver(payload);
+      if (!result.success) {
+        setInstallStatus('error');
+        setInstallError(resolveSerialDriverInstallErrorMessage(
+          result,
+          normalizedDriverPort ?? driverPort,
+        ));
+        setInstallErrorDetails(result.technicalDetails ?? null);
+        return;
+      }
+
+      handlePrepareLocalSuccess();
+    } catch (err) {
+      setInstallStatus('error');
+      setInstallError(err instanceof Error ? err.message : 'Failed to configure and start local NUT serial driver');
+      setInstallErrorDetails(null);
+    }
+  }, [
+    canPrepareLocalDriver,
+    nutFolderPath,
+    upsName,
+    normalizedDriverName,
+    normalizedDriverPort,
+    driverPort,
+    normalizedTtymode,
+    resolveSerialDriverInstallErrorMessage,
+    handlePrepareLocalSuccess,
   ]);
 
   if (step === 'choose') {
     return (
-      <div className="wizard-backdrop">
-        <div className="wizard-card" style={{ maxWidth: '680px' }}>
-          <div className="wizard-header">
-            <h1 className="wizard-title">{t('wizard.chooseMode', 'How would you like to connect?')}</h1>
-            <p className="wizard-subtitle">{t('wizard.connectSubtitle')}</p>
-          </div>
-
-          <div
-            className="wizard-form"
-            style={{ display: 'grid', gap: '12px', marginBottom: '0' }}
-          >
-            <button
-              className="btn btn--secondary"
-              onClick={() => {
-                setMode('directNut');
-                setInstallStatus('idle');
-                setInstallError(null);
-                setStep('connect');
-              }}
-              style={{
-                width: '100%',
-                justifyContent: 'space-between',
-                alignItems: 'center',
-                textAlign: 'left',
-                padding: '16px',
-              }}
-            >
-              <span style={{ display: 'flex', flexDirection: 'column', gap: '2px', flex: 1 }}>
-                <strong>{t('wizard.modeNutDirect', 'Connect to NUT Server')}</strong>
-                <span className="form-hint">
-                  {t('wizard.modeNutDirectDesc', 'I already have a NUT server running')}
-                </span>
-              </span>
-              <Router
-                size={20}
-                style={{ flexShrink: 0, marginLeft: '12px' }}
-              />
-            </button>
-
-            <button
-              className="btn btn--secondary"
-              onClick={() => {
-                setMode('snmpSetup');
-                setInstallStatus('idle');
-                setInstallError(null);
-                setStep('nutSetup');
-              }}
-              style={{
-                width: '100%',
-                justifyContent: 'space-between',
-                alignItems: 'center',
-                textAlign: 'left',
-                padding: '16px',
-              }}
-            >
-              <span style={{ display: 'flex', flexDirection: 'column', gap: '2px', flex: 1 }}>
-                <strong>{t('wizard.modeSnmpSetup', 'Set Up SNMP UPS')}</strong>
-                <span className="form-hint">
-                  {t('wizard.modeSnmpSetupDesc', 'Help me configure NUT to monitor an SNMP UPS')}
-                </span>
-              </span>
-              <MonitorCog
-                size={20}
-                style={{ flexShrink: 0, marginLeft: '12px' }}
-              />
-            </button>
-          </div>
-        </div>
-      </div>
+      <ChooseSetupModeStep
+        onChooseDirectNut={() => {
+          setMode('directNut');
+          setInstallStatus('idle');
+          setInstallError(null);
+          setInstallErrorDetails(null);
+          setStep('connect');
+        }}
+        onChooseSnmpSetup={() => {
+          setMode('snmpSetup');
+          setInstallStatus('idle');
+          setInstallError(null);
+          setInstallErrorDetails(null);
+          setUpsName((previous) => {
+            const normalized = previous.trim().toLowerCase();
+            if (!normalized || normalized === 'serialups') {
+              return 'snmpups';
+            }
+            return previous;
+          });
+          setStep('nutSetup');
+        }}
+        onChooseSerialSetup={() => {
+          setMode('serialSetup');
+          setInstallStatus('idle');
+          setInstallError(null);
+          setInstallErrorDetails(null);
+          setUpsName((previous) => {
+            const normalized = previous.trim().toLowerCase();
+            if (!normalized || normalized === 'snmpups') {
+              return 'serialups';
+            }
+            return previous;
+          });
+          setNutFolderPath('');
+          setFolderValidation(null);
+          setDriverFilter('');
+          setDriverName('');
+          setAvailableDrivers([]);
+          setDriverPort('');
+          setAvailableComPorts([]);
+          setStep('nutSetup');
+        }}
+      />
     );
   }
 
   if (step === 'nutSetup') {
     return (
-      <div className="wizard-backdrop">
-        <div className="wizard-card" style={{ maxWidth: '780px', maxHeight: '90vh', display: 'flex', flexDirection: 'column' }}>
-          <div className="wizard-header">
-            <WizardSteps currentStep="nutSetup" mode={mode} />
-            <h1 className="wizard-title">{t('wizard.nutDownloadTitle', 'Configure NUT for Windows')}</h1>
-            <p className="wizard-subtitle">
-              {t(
-                'wizard.nutDownloadDesc',
-                'Download the latest NUT for Windows release, decompress the zip file into a new folder, then select the folder below.',
-              )}
-            </p>
-          </div>
-
-          <div className="wizard-form" style={{ overflowY: 'auto', paddingRight: '12px', flex: 1 }}>
-            <div className="form-group">
-              <a
-                className="btn btn--secondary"
-                href="https://github.com/networkupstools/nut/releases"
-                target="_blank"
-                rel="noreferrer"
-                style={{ width: 'fit-content' }}
-              >
-                <Download size={16} />
-                {t('wizard.nutDownloadLink', 'Download NUT from GitHub Releases')}
-              </a>
-            </div>
-
-            <div className="form-group">
-              <button
-                className="btn btn--secondary"
-                onClick={handleChooseNutFolder}
-                disabled={validatingFolder || installStatus === 'installing'}
-                type="button"
-                style={{ width: 'fit-content' }}
-              >
-                <FolderOpen size={16} />
-                {t('wizard.nutChooseFolder', 'Choose NUT Folder')}
-              </button>
-              {nutFolderPath && (
-                <input
-                  className="form-input"
-                  type="text"
-                  value={nutFolderPath}
-                  readOnly
-                />
-              )}
-            </div>
-
-            {isFolderValid && (
-              <div className="wizard-feedback wizard-feedback--success">
-                <span className="feedback-icon"><CheckCircle2 size={20} /></span>
-                <span>{t('wizard.nutFolderValid', 'NUT folder structure verified')}</span>
-              </div>
-            )}
-
-            {hasFolderValidation && !folderValidation.valid && (
-              <div className="wizard-feedback wizard-feedback--error">
-                <span className="feedback-icon"><XCircle size={20} /></span>
-                <span>
-                  {t('wizard.nutFolderInvalid', 'Folder is not a valid NUT folder')}
-                </span>
-              </div>
-            )}
-
-            {requiresUac && (
-              <div className="wizard-feedback wizard-feedback--error">
-                <span className="feedback-icon"><ShieldAlert size={20} /></span>
-                <span>
-                  {t(
-                    'wizard.nutFolderNeedsUac',
-                    'NUT folder structure is valid, but writing config requires administrator permission. Click "Ask for UAC" to continue.',
-                  )}
-                </span>
-              </div>
-            )}
-
-            <h2
-              style={{
-                fontSize: '0.96rem',
-                fontWeight: 600,
-                marginBottom: '10px',
-              }}
-            >
-              {t('wizard.snmpConfigTitle', 'SNMP UPS Configuration')}
-            </h2>
-
-            <div className="form-group">
-              <label className="form-label" htmlFor="wiz-snmp-ups-name">
-                {t('wizard.snmpUpsName', 'UPS Name')}
-              </label>
-              <input
-                id="wiz-snmp-ups-name"
-                className="form-input"
-                type="text"
-                value={upsName}
-                onChange={(e) => {
-                  setUpsName(e.target.value);
-                  setInstallStatus('idle');
-                }}
-                placeholder="snmpups"
-              />
-              <span className="form-hint">
-                {t('wizard.snmpUpsNameHint', 'Letters, numbers, and hyphens only')}
-              </span>
-              {!upsNameValid && upsName.length > 0 && (
-                <span style={{ color: 'var(--color-error)', fontSize: '0.82rem' }}>
-                  {t('wizard.upsNameInvalid', 'UPS name may only contain letters, numbers, and hyphens')}
-                </span>
-              )}
-            </div>
-
-            <div className="form-group">
-              <label className="form-label" htmlFor="wiz-snmp-target">
-                {t('wizard.snmpPort', 'SNMP Target (IP or IP:port)')}
-              </label>
-              <input
-                id="wiz-snmp-target"
-                className="form-input"
-                type="text"
-                value={snmpTarget}
-                onChange={(e) => {
-                  setSnmpTarget(e.target.value);
-                  setInstallStatus('idle');
-                }}
-                placeholder="192.168.1.100 or 192.168.1.100:161"
-              />
-              {!snmpTargetValid && snmpTarget.length > 0 && (
-                <span style={{ color: 'var(--color-error)', fontSize: '0.82rem' }}>
-                  {t('wizard.snmpPortInvalid', 'Enter a valid IP address or IP:port')}
-                </span>
-              )}
-            </div>
-
-            <div className="form-row form-row--two">
-              <div className="form-group">
-                <label className="form-label" htmlFor="wiz-snmp-version">
-                  {t('wizard.snmpVersion', 'SNMP Version')}
-                </label>
-                <select
-                  id="wiz-snmp-version"
-                  className="form-input"
-                  value={snmpVersion}
-                  onChange={(e) => {
-                    setSnmpVersion(e.target.value as SnmpVersion);
-                    setInstallStatus('idle');
-                  }}
-                >
-                  <option value="v1">v1</option>
-                  <option value="v2c">v2c</option>
-                  <option value="v3">v3</option>
-                </select>
-              </div>
-              <div className="form-group">
-                <label className="form-label" htmlFor="wiz-snmp-pollfreq">
-                  {t('wizard.snmpPollFreq', 'Poll Frequency (sec)')}
-                </label>
-                <input
-                  id="wiz-snmp-pollfreq"
-                  className="form-input"
-                  type="number"
-                  value={pollfreq}
-                  min={3}
-                  max={15}
-                  onChange={(e) => {
-                    setPollfreq(Number(e.target.value));
-                    setInstallStatus('idle');
-                  }}
-                />
-              </div>
-            </div>
-
-            <div className="form-row form-row--two">
-              <div className="form-group">
-                <label className="form-label" htmlFor="wiz-snmp-mibs">
-                  {t('wizard.snmpMibs', 'MIBs')}
-                </label>
-                <input
-                  id="wiz-snmp-mibs"
-                  className="form-input"
-                  type="text"
-                  value={mibs}
-                  onChange={(e) => {
-                    setMibs(e.target.value);
-                    setInstallStatus('idle');
-                  }}
-                />
-              </div>
-              <div className="form-group">
-                <label className="form-label" htmlFor="wiz-snmp-community">
-                  {t('wizard.snmpCommunity', 'Community')}
-                </label>
-                <input
-                  id="wiz-snmp-community"
-                  className="form-input"
-                  type="text"
-                  value={community}
-                  onChange={(e) => {
-                    setCommunity(e.target.value);
-                    setInstallStatus('idle');
-                  }}
-                />
-              </div>
-            </div>
-
-            {snmpVersion === 'v3' && (
-              <>
-                <div className="form-row form-row--two">
-                  <div className="form-group">
-                    <label className="form-label" htmlFor="wiz-snmp-seclevel">
-                      {t('wizard.snmpSecLevel', 'Security Level')}
-                    </label>
-                    <select
-                      id="wiz-snmp-seclevel"
-                      className="form-input"
-                      value={secLevel}
-                      onChange={(e) => {
-                        setSecLevel(e.target.value as SecLevel);
-                        setInstallStatus('idle');
-                      }}
-                    >
-                      <option value="noAuthNoPriv">noAuthNoPriv</option>
-                      <option value="authNoPriv">authNoPriv</option>
-                      <option value="authPriv">authPriv</option>
-                    </select>
-                  </div>
-                  <div className="form-group">
-                    <label className="form-label" htmlFor="wiz-snmp-secname">
-                      {t('wizard.snmpSecName', 'Security Name')}
-                    </label>
-                    <input
-                      id="wiz-snmp-secname"
-                      className="form-input"
-                      type="text"
-                      value={secName}
-                      onChange={(e) => {
-                        setSecName(e.target.value);
-                        setInstallStatus('idle');
-                      }}
-                    />
-                  </div>
-                </div>
-
-                {(secLevel === 'authNoPriv' || secLevel === 'authPriv') && (
-                  <div className="form-row form-row--two">
-                    <div className="form-group">
-                      <label className="form-label" htmlFor="wiz-snmp-auth-proto">
-                        {t('wizard.snmpAuthProtocol', 'Auth Protocol')}
-                      </label>
-                      <select
-                        id="wiz-snmp-auth-proto"
-                        className="form-input"
-                        value={authProtocol}
-                        onChange={(e) => {
-                          setAuthProtocol(e.target.value as AuthProtocol);
-                          setInstallStatus('idle');
-                        }}
-                      >
-                        <option value="MD5">MD5</option>
-                        <option value="SHA">SHA</option>
-                      </select>
-                    </div>
-                    <div className="form-group">
-                      <label className="form-label" htmlFor="wiz-snmp-auth-pass">
-                        {t('wizard.snmpAuthPassword', 'Auth Password')}
-                      </label>
-                      <input
-                        id="wiz-snmp-auth-pass"
-                        className="form-input"
-                        type="password"
-                        value={authPassword}
-                        onChange={(e) => {
-                          setAuthPassword(e.target.value);
-                          setInstallStatus('idle');
-                        }}
-                      />
-                    </div>
-                  </div>
-                )}
-
-                {secLevel === 'authPriv' && (
-                  <div className="form-row form-row--two">
-                    <div className="form-group">
-                      <label className="form-label" htmlFor="wiz-snmp-priv-proto">
-                        {t('wizard.snmpPrivProtocol', 'Priv Protocol')}
-                      </label>
-                      <select
-                        id="wiz-snmp-priv-proto"
-                        className="form-input"
-                        value={privProtocol}
-                        onChange={(e) => {
-                          setPrivProtocol(e.target.value as PrivProtocol);
-                          setInstallStatus('idle');
-                        }}
-                      >
-                        <option value="DES">DES</option>
-                        <option value="AES">AES</option>
-                      </select>
-                    </div>
-                    <div className="form-group">
-                      <label className="form-label" htmlFor="wiz-snmp-priv-pass">
-                        {t('wizard.snmpPrivPassword', 'Priv Password')}
-                      </label>
-                      <input
-                        id="wiz-snmp-priv-pass"
-                        className="form-input"
-                        type="password"
-                        value={privPassword}
-                        onChange={(e) => {
-                          setPrivPassword(e.target.value);
-                          setInstallStatus('idle');
-                        }}
-                      />
-                    </div>
-                  </div>
-                )}
-              </>
-            )}
-
-            <p className="form-hint">
-              {t(
-                'wizard.prepareHint',
-                'This writes NUT configuration files (ups.conf, upsd.conf) and starts local snmp-ups/upsd immediately. If the folder is protected, an Administrator permission prompt will appear.',
-              )}
-            </p>
-
-            {installStatus === 'success' && (
-              <div className="wizard-feedback wizard-feedback--success">
-                <span className="feedback-icon"><CheckCircle2 size={20} /></span>
-                <span>{t('wizard.configApplied', 'NUT configured and local processes started successfully')}</span>
-              </div>
-            )}
-
-            {installStatus === 'error' && installError && (
-              <div className="wizard-feedback wizard-feedback--error">
-                <span className="feedback-icon"><XCircle size={20} /></span>
-                <span>{installError}</span>
-              </div>
-            )}
-          </div>
-
-          <div className="wizard-actions" style={{ flexShrink: 0, marginTop: '20px' }}>
-            <button
-              className="btn btn--secondary"
-              onClick={() => setStep('choose')}
-              disabled={installStatus === 'installing'}
-            >
-              {t('wizard.back')}
-            </button>
-
-            <button
-              className="btn btn--primary"
-              onClick={handlePrepareLocalNut}
-              disabled={!canPrepareLocalNut}
-            >
-              {installStatus === 'installing' ? (
-                <>
-                  <span className="btn-spinner" />
-                  {t('wizard.applyingConfig', 'Configuring and starting...')}
-                </>
-              ) : (
-                requiresUac ? (
-                  <>
-                    <ShieldAlert size={16} />
-                    {t('wizard.askForUac', 'Ask for UAC')}
-                  </>
-                ) : (
-                  t('wizard.prepareLocalNut', 'Configure and Start Local NUT')
-                )
-              )}
-            </button>
-          </div>
-        </div>
-      </div>
+      <NutSetupStep
+        mode={mode}
+        nutFolderPath={nutFolderPath}
+        validatingFolder={validatingFolder}
+        folderValidation={folderValidation}
+        hasFolderValidation={hasFolderValidation}
+        isFolderValid={isFolderValid}
+        requiresUac={requiresUac}
+        installStatus={installStatus}
+        installError={installError}
+        installErrorDetails={installErrorDetails}
+        canPrepareLocalNut={canPrepareLocalNut}
+        canPrepareLocalDriver={canPrepareLocalDriver}
+        onChooseNutFolder={handleChooseNutFolder}
+        onPrepareLocalNut={handlePrepareLocalNut}
+        onPrepareLocalDriver={handlePrepareLocalDriver}
+        onBack={() => setStep('choose')}
+        snmpFormProps={{
+          upsName,
+          upsNameValid,
+          snmpTarget,
+          snmpTargetValid,
+          snmpVersion,
+          pollfreq,
+          mibs,
+          community,
+          secLevel,
+          secName,
+          authProtocol,
+          authPassword,
+          privProtocol,
+          privPassword,
+          onUpsNameChange: (value: string) => {
+            setUpsName(value);
+            setInstallStatus('idle');
+          },
+          onSnmpTargetChange: (value: string) => {
+            setSnmpTarget(value);
+            setInstallStatus('idle');
+          },
+          onSnmpVersionChange: (value: SnmpVersion) => {
+            setSnmpVersion(value);
+            setInstallStatus('idle');
+          },
+          onPollfreqChange: (value: number) => {
+            setPollfreq(value);
+            setInstallStatus('idle');
+          },
+          onMibsChange: (value: string) => {
+            setMibs(value);
+            setInstallStatus('idle');
+          },
+          onCommunityChange: (value: string) => {
+            setCommunity(value);
+            setInstallStatus('idle');
+          },
+          onSecLevelChange: (value: SecLevel) => {
+            setSecLevel(value);
+            setInstallStatus('idle');
+          },
+          onSecNameChange: (value: string) => {
+            setSecName(value);
+            setInstallStatus('idle');
+          },
+          onAuthProtocolChange: (value: AuthProtocol) => {
+            setAuthProtocol(value);
+            setInstallStatus('idle');
+          },
+          onAuthPasswordChange: (value: string) => {
+            setAuthPassword(value);
+            setInstallStatus('idle');
+          },
+          onPrivProtocolChange: (value: PrivProtocol) => {
+            setPrivProtocol(value);
+            setInstallStatus('idle');
+          },
+          onPrivPasswordChange: (value: string) => {
+            setPrivPassword(value);
+            setInstallStatus('idle');
+          },
+        }}
+        serialFormProps={{
+          upsName,
+          upsNameValid,
+          driverFilter: normalizedDriverFilter,
+          driverName: normalizedDriverName,
+          filteredDrivers,
+          isFolderValid,
+          availableDrivers,
+          availableComPorts,
+          normalizedDriverPort,
+          driverPort,
+          driverPortValid,
+          ttymode: normalizedTtymode,
+          installStatus,
+          onUpsNameChange: (value: string) => {
+            setUpsName(value);
+            setInstallStatus('idle');
+          },
+          onDriverFilterChange: (value: string) => {
+            setDriverFilter(typeof value === 'string' ? value : '');
+          },
+          onDriverNameChange: (value: string) => {
+            setDriverName(typeof value === 'string' ? value : '');
+            setInstallStatus('idle');
+          },
+          onRefreshComPorts: handleRefreshComPorts,
+          onDriverPortChange: (value: string) => {
+            setDriverPort(value);
+            setInstallStatus('idle');
+          },
+          onTtymodeChange: (value: string) => {
+            setTtymode(value);
+            setInstallStatus('idle');
+          },
+        }}
+      />
     );
   }
 
@@ -903,7 +748,7 @@ export function SetupWizardPage() {
       <div className="wizard-backdrop">
         <div
           className="wizard-card"
-          style={{ maxWidth: mode === 'snmpSetup' ? '680px' : '560px' }}
+          style={{ maxWidth: mode === 'directNut' ? '560px' : '680px' }}
         >
           <div className="wizard-header">
             <WizardSteps currentStep="line" mode={mode} />
@@ -1145,4 +990,12 @@ function isValidSnmpTarget(value: string): boolean {
 
   const port = Number(match[1]);
   return Number.isInteger(port) && port >= 1 && port <= 65535;
+}
+
+function normalizeComPort(value: string): string | null {
+  const candidate = value.trim().toUpperCase();
+  if (!COM_PORT_PATTERN.test(candidate)) {
+    return null;
+  }
+  return candidate;
 }

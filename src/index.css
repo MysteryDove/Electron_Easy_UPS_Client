@@ -648,6 +648,123 @@ body,
   justify-content: flex-end;
 }
 
+.wizard-com-port-row {
+  display: grid;
+  grid-template-columns: 1fr auto;
+  gap: 10px;
+  align-items: stretch;
+}
+
+.wizard-com-port-select {
+  padding-right: 30px;
+}
+
+.wizard-folder-row {
+  display: grid;
+  grid-template-columns: minmax(180px, 25%) 1fr;
+  gap: 8px;
+  align-items: stretch;
+}
+
+.wizard-combobox-container {
+  position: relative;
+  width: 100%;
+}
+
+.wizard-combobox-input {
+  width: 100%;
+  padding-right: 40px;
+}
+
+.wizard-combobox-button {
+  position: absolute;
+  top: 4px;
+  right: 4px;
+  width: 30px;
+  height: 30px;
+  border-radius: var(--radius-sm);
+  border: 1px solid var(--color-border);
+  background: var(--color-bg-input);
+  color: var(--color-text-muted);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  cursor: pointer;
+  transition: border-color var(--transition), color var(--transition), background var(--transition);
+}
+
+.wizard-combobox-button:hover {
+  background: var(--color-bg-hover);
+  color: var(--color-text);
+}
+
+.wizard-combobox-button:disabled {
+  cursor: not-allowed;
+  opacity: 0.55;
+}
+
+.wizard-combobox-button:focus-visible {
+  outline: none;
+  border-color: var(--color-border-focus);
+  box-shadow: 0 0 0 3px var(--color-primary-glow);
+}
+
+.wizard-combobox-options {
+  position: absolute;
+  z-index: 20;
+  left: 0;
+  right: 0;
+  top: calc(100% + 4px);
+  max-height: 220px;
+  overflow-y: auto;
+  background: var(--color-bg-input);
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-sm);
+  box-shadow: var(--shadow-card);
+  padding: 4px;
+}
+
+.wizard-combobox-option {
+  padding: 8px 10px;
+  border-radius: var(--radius-sm);
+  cursor: pointer;
+  color: var(--color-text);
+  font-size: 0.9rem;
+}
+
+.wizard-combobox-option[data-focus] {
+  background: var(--color-bg-hover);
+}
+
+.wizard-combobox-option[data-selected] {
+  color: var(--color-primary);
+  font-weight: 600;
+}
+
+.wizard-combobox-empty {
+  padding: 8px 10px;
+  color: var(--color-text-dim);
+  font-size: 0.85rem;
+}
+
+.wizard-inline-link {
+  color: var(--color-primary);
+  text-decoration: underline;
+  text-underline-offset: 2px;
+  font-size: 0.85rem;
+  font-weight: 500;
+}
+
+.wizard-inline-link:hover {
+  color: var(--color-primary-hover);
+}
+
+@media (max-width: 760px) {
+  .wizard-folder-row {
+    grid-template-columns: 1fr;
+  }
+}
+
 /* ===================================================================
    Settings page
    =================================================================== */

@@ -14,6 +14,9 @@ export const IPC_CHANNELS = {
   nutSetupChooseFolder: 'nut-setup:choose-folder',
   nutSetupValidateFolder: 'nut-setup:validate-folder',
   nutSetupPrepareLocalNut: 'nut-setup:prepare-local-nut',
+  nutSetupListSerialDrivers: 'nutSetup:listSerialDrivers',
+  nutSetupListComPorts: 'nutSetup:listComPorts',
+  nutSetupPrepareLocalDriver: 'nutSetup:prepareLocalDriver',
   nutGetState: 'nut:get-state',
   criticalAlertTest: 'critical-alert:test',
 } as const;
@@ -88,6 +91,39 @@ export type NutSetupPrepareLocalNutResult = {
   error?: string;
 };
 
+export type NutSetupListSerialDriversPayload = {
+  folderPath: string;
+};
+
+export type NutSetupListSerialDriversResult = {
+  drivers: string[];
+};
+
+export type NutSetupListComPortsResult = {
+  ports: string[];
+};
+
+export type NutSetupPrepareLocalDriverPayload = {
+  folderPath: string;
+  upsName: string;
+  driver: string;
+  port: string;
+  ttymode?: string;
+};
+
+export type NutSetupPrepareLocalDriverErrorCode =
+  | 'SERIAL_COM_PORT_ACCESS'
+  | 'SERIAL_COM_PORT_MISSING'
+  | 'SERIAL_DRIVER_INIT_TIMEOUT'
+  | 'SERIAL_DRIVER_STARTUP_FAILED';
+
+export type NutSetupPrepareLocalDriverResult = {
+  success: boolean;
+  error?: string;
+  errorCode?: NutSetupPrepareLocalDriverErrorCode;
+  technicalDetails?: string;
+};
+
 export type RendererInvokeMap = {
   [IPC_CHANNELS.settingsGet]: {
     request: void;
@@ -132,6 +168,18 @@ export type RendererInvokeMap = {
   [IPC_CHANNELS.nutSetupPrepareLocalNut]: {
     request: NutSetupPrepareLocalNutPayload;
     response: NutSetupPrepareLocalNutResult;
+  };
+  [IPC_CHANNELS.nutSetupListSerialDrivers]: {
+    request: NutSetupListSerialDriversPayload;
+    response: NutSetupListSerialDriversResult;
+  };
+  [IPC_CHANNELS.nutSetupListComPorts]: {
+    request: void;
+    response: NutSetupListComPortsResult;
+  };
+  [IPC_CHANNELS.nutSetupPrepareLocalDriver]: {
+    request: NutSetupPrepareLocalDriverPayload;
+    response: NutSetupPrepareLocalDriverResult;
   };
   [IPC_CHANNELS.nutGetState]: {
     request: void;

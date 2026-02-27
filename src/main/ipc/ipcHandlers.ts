@@ -18,12 +18,19 @@ import { i18nService } from '../system/i18nService';
 import { applyStartWithWindowsSetting } from '../system/startupService';
 import type { TrayService } from '../system/trayService';
 import {
+  listComPorts,
+  listSerialDrivers,
+  prepareLocalDriver,
   prepareLocalNut,
   validateNutFolder,
+  waitForSerialDriverReady,
 } from '../nut/nutSetupService';
 import {
   IPC_CHANNELS,
   IPC_EVENTS,
+  type NutSetupListSerialDriversPayload,
+  type NutSetupPrepareLocalDriverPayload,
+  type NutSetupPrepareLocalDriverResult,
   type WizardTestConnectionPayload,
   type WizardTestConnectionResult,
   type WizardCompletePayload,
@@ -190,6 +197,49 @@ export function registerIpcHandlers(dependencies: IpcHandlerDependencies): void 
           success: false,
           error: error instanceof Error ? error.message : String(error),
         };
+      }
+    },
+  );
+
+  ipcMain.handle(
+    IPC_CHANNELS.nutSetupListSerialDrivers,
+    async (_event, payload: unknown) =>
+      listSerialDrivers(
+        normalizeNutSetupListSerialDriversPayload(payload).folderPath,
+      ),
+  );
+
+  ipcMain.handle(IPC_CHANNELS.nutSetupListComPorts, async () =>
+    listComPorts(),
+  );
+
+  ipcMain.handle(
+    IPC_CHANNELS.nutSetupPrepareLocalDriver,
+    async (_event, payload: unknown): Promise<NutSetupPrepareLocalDriverResult> => {
+      const normalizedPayload = normalizeNutSetupPrepareDriverPayload(payload);
+      const prepareResult = await prepareLocalDriver(normalizedPayload);
+      if (!prepareResult.success) {
+        return {
+          ...prepareResult,
+          errorCode: prepareResult.errorCode ?? 'SERIAL_DRIVER_STARTUP_FAILED',
+          technicalDetails:
+            prepareResult.technicalDetails ??
+            buildTechnicalDetails(prepareResult.error ?? ''),
+        };
+      }
+
+      try {
+        await dependencies.nutPollingService.startLocalComponentsForWizard(
+          normalizedPayload.folderPath,
+          normalizedPayload.upsName,
+        );
+        await waitForSerialDriverReady({
+          folderPath: normalizedPayload.folderPath,
+          upsName: normalizedPayload.upsName,
+        });
+        return prepareResult;
+      } catch (error) {
+        return classifySerialDriverFailure(normalizedPayload, error);
       }
     },
   );
@@ -401,6 +451,21 @@ function normalizeNutSetupValidatePayload(
   return { folderPath: candidate.folderPath };
 }
 
+function normalizeNutSetupListSerialDriversPayload(
+  payload: unknown,
+): NutSetupListSerialDriversPayload {
+  if (typeof payload !== 'object' || payload === null) {
+    throw new Error('NUT setup list-serial-drivers payload must be an object');
+  }
+
+  const candidate = payload as { folderPath?: unknown };
+  if (typeof candidate.folderPath !== 'string' || !candidate.folderPath.trim()) {
+    throw new Error('folderPath is required');
+  }
+
+  return { folderPath: candidate.folderPath };
+}
+
 function normalizeNutSetupPreparePayload(
   payload: unknown,
 ): NutSetupPrepareLocalNutPayload {
@@ -474,6 +539,153 @@ function normalizeNutSetupPreparePayload(
   }
 
   return result;
+}
+
+function normalizeNutSetupPrepareDriverPayload(
+  payload: unknown,
+): NutSetupPrepareLocalDriverPayload {
+  if (typeof payload !== 'object' || payload === null) {
+    throw new Error('NUT setup prepare-driver payload must be an object');
+  }
+
+  const candidate = payload as Record<string, unknown>;
+  const requiredStringFields: Array<keyof NutSetupPrepareLocalDriverPayload> = [
+    'folderPath',
+    'upsName',
+    'driver',
+    'port',
+  ];
+
+  for (const field of requiredStringFields) {
+    if (typeof candidate[field] !== 'string' || !(candidate[field] as string).trim()) {
+      throw new Error(`${field} is required`);
+    }
+  }
+
+  const result: NutSetupPrepareLocalDriverPayload = {
+    folderPath: candidate.folderPath as string,
+    upsName: candidate.upsName as string,
+    driver: candidate.driver as string,
+    port: candidate.port as string,
+  };
+
+  if (typeof candidate.ttymode === 'string' && candidate.ttymode.trim()) {
+    result.ttymode = candidate.ttymode;
+  }
+
+  return result;
+}
+
+async function classifySerialDriverFailure(
+  payload: NutSetupPrepareLocalDriverPayload,
+  error: unknown,
+): Promise<NutSetupPrepareLocalDriverResult> {
+  const rawMessage = error instanceof Error ? error.message : String(error);
+  const technicalDetails = buildTechnicalDetails(rawMessage);
+  const selectedPort = normalizeComPortToken(payload.port);
+  const normalizedMessage = rawMessage.toLowerCase();
+  const mentionsSelectedPort = selectedPort
+    ? normalizedMessage.includes(selectedPort.toLowerCase())
+    : false;
+  const hasPortOpenFailure = /(?:unable|failed)\s+to\s+open\s+com\d+/iu.test(rawMessage) ||
+    /cannot\s+open\s+com\d+/iu.test(rawMessage);
+  const hasAccessDeniedHint = /operation not permitted|access is denied|permission denied|device or resource busy|resource busy|port is busy|in use/iu.test(rawMessage);
+
+  if (
+    (hasPortOpenFailure && hasAccessDeniedHint) ||
+    (mentionsSelectedPort && hasAccessDeniedHint)
+  ) {
+    return {
+      success: false,
+      errorCode: 'SERIAL_COM_PORT_ACCESS',
+      error: selectedPort
+        ? `Unable to open ${selectedPort}. The port is in use or access is denied. Close other serial applications and try again.`
+        : 'Unable to open the selected COM port. The port is in use or access is denied. Close other serial applications and try again.',
+      technicalDetails,
+    };
+  }
+
+  if (/timed out waiting for serial driver initialization/iu.test(rawMessage)) {
+    const portExists = selectedPort
+      ? await detectComPortPresence(selectedPort)
+      : null;
+
+    if (selectedPort && portExists === false) {
+      return {
+        success: false,
+        errorCode: 'SERIAL_COM_PORT_MISSING',
+        error: `${selectedPort} is no longer available. Reconnect the UPS serial cable, verify the COM port, and try again.`,
+        technicalDetails,
+      };
+    }
+
+    return {
+      success: false,
+      errorCode: 'SERIAL_DRIVER_INIT_TIMEOUT',
+      error: 'The serial driver started, but UPS status did not become ready in time. Verify the COM port, cable, and driver compatibility.',
+      technicalDetails,
+    };
+  }
+
+  if (selectedPort) {
+    const portExists = await detectComPortPresence(selectedPort);
+    if (portExists === false) {
+      return {
+        success: false,
+        errorCode: 'SERIAL_COM_PORT_MISSING',
+        error: `${selectedPort} is not currently available. Reconnect the UPS serial cable, refresh COM ports, and try again.`,
+        technicalDetails,
+      };
+    }
+  }
+
+  if (hasPortOpenFailure) {
+    return {
+      success: false,
+      errorCode: 'SERIAL_COM_PORT_ACCESS',
+      error: selectedPort
+        ? `Unable to open ${selectedPort}. Check whether the port is in use or blocked by permissions.`
+        : 'Unable to open the selected COM port. Check whether the port is in use or blocked by permissions.',
+      technicalDetails,
+    };
+  }
+
+  return {
+    success: false,
+    errorCode: 'SERIAL_DRIVER_STARTUP_FAILED',
+    error: rawMessage || 'Failed to configure and start local NUT serial driver',
+    technicalDetails,
+  };
+}
+
+function normalizeComPortToken(value: string): string | null {
+  const trimmed = value.trim().toUpperCase();
+  if (!/^COM\d+$/u.test(trimmed)) {
+    return null;
+  }
+  return trimmed;
+}
+
+async function detectComPortPresence(port: string): Promise<boolean | null> {
+  try {
+    const ports = await listComPorts();
+    return ports.ports.includes(port);
+  } catch {
+    return null;
+  }
+}
+
+function buildTechnicalDetails(rawMessage: string): string | undefined {
+  const message = rawMessage.trim();
+  if (!message) {
+    return undefined;
+  }
+
+  if (message.length <= 8000) {
+    return message;
+  }
+
+  return `${message.slice(0, 8000)}\n...[truncated]`;
 }
 
 // ---------------------------------------------------------------------------
