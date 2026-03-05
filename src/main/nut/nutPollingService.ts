@@ -13,7 +13,7 @@ import type {
   TelemetryRepository,
   TelemetryValues,
 } from '../db/telemetryRepository';
-import { IPC_EVENTS } from '../ipc/ipcChannels';
+import { IPC_EVENTS, type LocalDriverLaunchIssue } from '../ipc/ipcChannels';
 import type { ConnectionState } from '../ipc/ipcEvents';
 import { discoverNutCapabilities } from './nutCapabilityDiscovery';
 import { NutClient } from './nutClient';
@@ -25,6 +25,13 @@ const LOCAL_UPSD_START_DELAY_MS = 1000;
 const DEFAULT_LOCAL_DRIVER_EXECUTABLE = 'snmp-ups';
 const MAX_CAPTURED_PROCESS_LOG_LINES = 240;
 const MAX_CAPTURED_PROCESS_LOG_LINE_LENGTH = 2000;
+const MAX_LOCAL_DRIVER_TECHNICAL_DETAILS_LENGTH = 8000;
+const COM_PORT_PATTERN = /^COM\d+$/iu;
+const DRIVER_STATE_READY_VALUE = 'quiet';
+const UPS_STATUS_WAIT_VALUE = 'WAIT';
+const DRIVER_STATE_READY_TIMEOUT_MS = 45 * 1000;
+const DRIVER_STATE_WAIT_GRACE_TIMEOUT_MS = 45 * 1000;
+const DRIVER_STATE_READY_POLL_INTERVAL_MS = 1000;
 const execFileAsync = promisify(execFile);
 const LOG_LEVEL_PRIORITY: Record<DebugLogLevel, number> = {
   off: 0,
@@ -56,6 +63,11 @@ type LocalProcessOutputCapture = {
   stderrRemainder: string;
 };
 
+type UpsConfDriverConfig = {
+  driverExecutable: string | null;
+  port: string | null;
+};
+
 export class NutPollingService {
   private readonly configStore: ConfigStore;
   private readonly telemetryRepository: TelemetryRepository;
@@ -75,6 +87,8 @@ export class NutPollingService {
     ChildProcess,
     LocalProcessOutputCapture
   >();
+  private localDriverLaunchIssue: LocalDriverLaunchIssue | null = null;
+  private requiresManualDriverRetry = false;
   private availableFields: Set<string> = new Set();
   private staticFields: Set<string> = new Set();
   private dynamicFields: Set<string> = new Set();
@@ -99,6 +113,7 @@ export class NutPollingService {
 
   public async stop(): Promise<void> {
     this.started = false;
+    this.requiresManualDriverRetry = false;
     this.clearPollTimer();
     this.clearReconnectTimer();
     await this.nutClient.close();
@@ -140,6 +155,44 @@ export class NutPollingService {
 
   public getStaticSnapshot(): Record<string, string> {
     return this.staticSnapshot;
+  }
+
+  public getLocalDriverLaunchIssue(): LocalDriverLaunchIssue | null {
+    return this.localDriverLaunchIssue;
+  }
+
+  public async retryLocalDriverLaunchAfterIssue(): Promise<{
+    success: boolean;
+    error?: string;
+  }> {
+    if (!this.started) {
+      return {
+        success: false,
+        error: 'NUT polling service is not running',
+      };
+    }
+
+    this.requiresManualDriverRetry = false;
+    this.clearPollTimer();
+    this.clearReconnectTimer();
+    await this.nutClient.close().catch(() => {
+      // Ignore close errors during retry flow.
+    });
+    await this.stopLocalNutProcesses({ forceManagedChildren: true });
+    this.reconnectAttempt = 0;
+    this.setState('reconnecting');
+    await this.connectAndInitialize();
+
+    if (this.state === 'ready') {
+      return { success: true };
+    }
+
+    return {
+      success: false,
+      error:
+        this.localDriverLaunchIssue?.summary ??
+        'Driver retry failed. Resolve the issue and try again.',
+    };
   }
 
   public onTelemetryUpdated(listener: NutTelemetryUpdatedListener): () => void {
@@ -193,6 +246,7 @@ export class NutPollingService {
   }
 
   private async reconnectNow(): Promise<void> {
+    this.requiresManualDriverRetry = false;
     this.clearPollTimer();
     this.clearReconnectTimer();
     await this.stopLocalNutProcesses({ forceManagedChildren: true });
@@ -240,6 +294,22 @@ export class NutPollingService {
         dynamicFieldCount: this.dynamicFields.size,
       });
 
+      if (config.nut.launchLocalComponents) {
+        try {
+          await this.waitForDriverStateQuiet(config.nut.upsName);
+        } catch (error) {
+          const technicalDetails = summarizeUnknownError(error);
+          this.setLocalDriverLaunchIssue({
+            code: 'SERIAL_DRIVER_LAUNCH_FAILED',
+            summary: `Driver initialization did not reach driver.state=${DRIVER_STATE_READY_VALUE}.`,
+            occurredAt: new Date().toISOString(),
+            signature: `SERIAL_DRIVER_LAUNCH_FAILED:driver-state:${config.nut.upsName}`,
+            technicalDetails: truncateTechnicalDetails(technicalDetails),
+          });
+          throw error;
+        }
+      }
+
       this.emitCurrentNutSnapshot();
 
       this.logPolledSnapshot(
@@ -259,6 +329,7 @@ export class NutPollingService {
   private async startLocalNutProcessesIfNeeded(config: AppConfig): Promise<void> {
     if (!config.nut.launchLocalComponents) {
       await this.stopLocalNutProcesses();
+      this.setLocalDriverLaunchIssue(null);
       return;
     }
 
@@ -280,10 +351,17 @@ export class NutPollingService {
       );
     }
 
+    const driverConfig = await readDriverConfigFromUpsConf(
+      folderPath,
+      config.nut.upsName,
+    );
     const {
       driverPath,
       driverExecutable,
-    } = await this.resolveLocalDriverPath(folderPath, config.nut.upsName);
+    } = await this.resolveLocalDriverPath(
+      folderPath,
+      driverConfig.driverExecutable,
+    );
     const upsdPath = path.join(folderPath, 'sbin', 'upsd.exe');
     await assertFileExists(upsdPath, 'upsd.exe');
 
@@ -301,6 +379,34 @@ export class NutPollingService {
     } else {
       const driverArgs = ['-a', config.nut.upsName];
       const driverCommandLine = formatCommandLineForLog(driverPath, driverArgs);
+      const configuredComPort = normalizeComPortToken(driverConfig.port);
+
+      if (configuredComPort) {
+        const precheck = await detectComPortPresenceForLaunch(configuredComPort);
+        if (precheck.exists === false) {
+          this.setLocalDriverLaunchIssue({
+            code: 'SERIAL_COM_PRECHECK_MISSING',
+            summary: `Configured serial port ${configuredComPort} was not found before launching the driver.`,
+            occurredAt: new Date().toISOString(),
+            signature: `SERIAL_COM_PRECHECK_MISSING:${configuredComPort}:${driverExecutable}`,
+            driverExecutable,
+            port: configuredComPort,
+            commandLine: driverCommandLine,
+            technicalDetails: truncateTechnicalDetails(
+              formatComPrecheckTechnicalDetails({
+                port: configuredComPort,
+                detectedPorts: precheck.detectedPorts,
+                detectionError: precheck.detectionError,
+              }),
+            ),
+          });
+
+          throw new Error(
+            `Configured serial port ${configuredComPort} is not currently available. Reconnect the UPS serial cable and retry.`,
+          );
+        }
+      }
+
       this.log('info', 'Starting local NUT driver process', {
         driverExecutable,
         driverPath,
@@ -340,14 +446,22 @@ export class NutPollingService {
           this.localDriverProcess = null;
         } else {
           const captured = this.getCapturedProcessOutput(driverProcess);
-          throw new Error(
-            formatLocalProcessEarlyExitError(
-              driverExecutable,
-              driverProcess.exitCode,
-              driverCommandLine,
-              captured,
-            ),
+          const technicalDetails = formatLocalProcessEarlyExitError(
+            driverExecutable,
+            driverProcess.exitCode,
+            driverCommandLine,
+            captured,
           );
+          this.setLocalDriverLaunchIssue(
+            classifyLocalDriverLaunchIssueFromEarlyExit({
+              driverExecutable,
+              configuredPort: configuredComPort,
+              commandLine: driverCommandLine,
+              capturedOutput: captured,
+              technicalDetails,
+            }),
+          );
+          throw new Error(technicalDetails);
         }
       }
     }
@@ -422,11 +536,10 @@ export class NutPollingService {
 
   private async resolveLocalDriverPath(
     folderPath: string,
-    upsName: string,
+    configuredDriverExecutable: string | null,
   ): Promise<{ driverPath: string; driverExecutable: string }> {
-    const configuredDriver =
-      await readDriverExecutableFromUpsConf(folderPath, upsName);
-    const driverExecutable = configuredDriver ?? DEFAULT_LOCAL_DRIVER_EXECUTABLE;
+    const driverExecutable =
+      configuredDriverExecutable ?? DEFAULT_LOCAL_DRIVER_EXECUTABLE;
     const relativeCandidates = [
       `bin/${driverExecutable}.exe`,
       `sbin/${driverExecutable}.exe`,
@@ -686,6 +799,14 @@ export class NutPollingService {
       return;
     }
 
+    if (this.requiresManualDriverRetry) {
+      this.log(
+        'warn',
+        'Automatic reconnect is paused until user retries local driver launch',
+      );
+      return;
+    }
+
     const delayMs = Math.min(
       INITIAL_RECONNECT_DELAY_MS * 2 ** this.reconnectAttempt,
       MAX_RECONNECT_DELAY_MS,
@@ -699,9 +820,35 @@ export class NutPollingService {
     }, delayMs);
   }
 
+  private setLocalDriverLaunchIssue(issue: LocalDriverLaunchIssue | null): void {
+    if (!issue) {
+      this.requiresManualDriverRetry = false;
+      if (!this.localDriverLaunchIssue) {
+        return;
+      }
+
+      this.localDriverLaunchIssue = null;
+      this.emitToRenderers(IPC_EVENTS.localDriverLaunchIssueChanged, { issue: null });
+      return;
+    }
+
+    this.requiresManualDriverRetry = true;
+
+    if (issue && this.localDriverLaunchIssue?.signature === issue.signature) {
+      return;
+    }
+
+    this.localDriverLaunchIssue = issue;
+    this.emitToRenderers(IPC_EVENTS.localDriverLaunchIssueChanged, { issue });
+  }
+
   private setState(nextState: ConnectionState): void {
     if (this.state === nextState) {
       return;
+    }
+
+    if (nextState === 'ready') {
+      this.setLocalDriverLaunchIssue(null);
     }
 
     this.state = nextState;
@@ -855,32 +1002,108 @@ export class NutPollingService {
       console.debug(prefix, message, payload);
     }
   }
+
+  private async waitForDriverStateQuiet(upsName: string): Promise<void> {
+    const primaryDeadline = Date.now() + DRIVER_STATE_READY_TIMEOUT_MS;
+    const absoluteDeadline =
+      primaryDeadline + DRIVER_STATE_WAIT_GRACE_TIMEOUT_MS;
+    let lastObservation = 'driver.state is unavailable';
+    let waitGraceUsed = false;
+
+    while (Date.now() <= absoluteDeadline) {
+      let driverStateValue: string | null = null;
+      let upsStatusValue: string | null = null;
+
+      try {
+        const driverState = await this.nutClient.getVariable(upsName, 'driver.state');
+        const normalized = driverState.trim().toLowerCase();
+        if (normalized === DRIVER_STATE_READY_VALUE) {
+          return;
+        }
+
+        driverStateValue = driverState;
+        lastObservation = `driver.state=${driverState}`;
+      } catch (error) {
+        lastObservation = `driver.state query failed (${summarizeUnknownError(error)})`;
+      }
+
+      try {
+        const upsStatus = await this.nutClient.getVariable(upsName, 'ups.status');
+        if (upsStatus.trim()) {
+          upsStatusValue = upsStatus.trim();
+          if (driverStateValue) {
+            lastObservation = `driver.state=${driverStateValue}; ups.status=${upsStatusValue}`;
+          } else {
+            lastObservation = `ups.status=${upsStatusValue}`;
+          }
+        }
+      } catch {
+        // Ignore ups.status read failures; driver.state remains primary signal.
+      }
+
+      const statusTokens = (upsStatusValue ?? '')
+        .split(/\s+/u)
+        .filter(Boolean)
+        .map((token) => token.toUpperCase());
+      const upsStatusWait = statusTokens.includes(UPS_STATUS_WAIT_VALUE);
+
+      const now = Date.now();
+      if (now > primaryDeadline && !upsStatusWait) {
+        break;
+      }
+
+      if (now > primaryDeadline && upsStatusWait) {
+        waitGraceUsed = true;
+      }
+
+      const remainingMs = absoluteDeadline - now;
+      if (remainingMs <= 0) {
+        break;
+      }
+
+      await sleep(Math.min(DRIVER_STATE_READY_POLL_INTERVAL_MS, remainingMs));
+    }
+
+    throw new Error(
+      waitGraceUsed
+        ? `Timed out waiting for driver initialization (including ups.status=${UPS_STATUS_WAIT_VALUE} grace). Expected driver.state=${DRIVER_STATE_READY_VALUE}. Last observation: ${lastObservation}`
+        : `Timed out waiting for driver initialization. Expected driver.state=${DRIVER_STATE_READY_VALUE}. Last observation: ${lastObservation}`,
+    );
+  }
 }
 
-async function readDriverExecutableFromUpsConf(
+async function readDriverConfigFromUpsConf(
   folderPath: string,
   upsName: string,
-): Promise<string | null> {
+): Promise<UpsConfDriverConfig> {
   const upsConfPath = path.join(folderPath, 'etc', 'ups.conf');
   let upsConfContent: string;
   try {
     upsConfContent = await fs.readFile(upsConfPath, 'utf8');
   } catch {
-    return null;
+    return {
+      driverExecutable: null,
+      port: null,
+    };
   }
 
-  return parseDriverExecutableFromUpsConf(upsConfContent, upsName);
+  return parseDriverConfigFromUpsConf(upsConfContent, upsName);
 }
 
-function parseDriverExecutableFromUpsConf(
+function parseDriverConfigFromUpsConf(
   upsConfContent: string,
   upsName: string,
-): string | null {
+): UpsConfDriverConfig {
   const normalizedUpsName = upsName.trim().toLowerCase();
   if (!normalizedUpsName) {
-    return null;
+    return {
+      driverExecutable: null,
+      port: null,
+    };
   }
 
+  let driverExecutable: string | null = null;
+  let port: string | null = null;
   let activeSection = '';
   for (const rawLine of upsConfContent.split(/\r?\n/u)) {
     const commentIndex = rawLine.search(/[;#]/u);
@@ -900,18 +1123,29 @@ function parseDriverExecutableFromUpsConf(
       continue;
     }
 
-    const driverMatch = line.match(/^driver\s*=\s*(.+)$/iu);
-    if (!driverMatch) {
-      continue;
+    if (driverExecutable === null) {
+      const driverMatch = line.match(/^driver\s*=\s*(.+)$/iu);
+      if (driverMatch) {
+        driverExecutable = sanitizeDriverExecutable(driverMatch[1]);
+      }
     }
 
-    const driverExecutable = sanitizeDriverExecutable(driverMatch[1]);
-    if (driverExecutable) {
-      return driverExecutable;
+    if (port === null) {
+      const portMatch = line.match(/^port\s*=\s*(.+)$/iu);
+      if (portMatch) {
+        port = sanitizeUpsConfValue(portMatch[1]);
+      }
+    }
+
+    if (driverExecutable !== null && port !== null) {
+      break;
     }
   }
 
-  return null;
+  return {
+    driverExecutable,
+    port,
+  };
 }
 
 function sanitizeDriverExecutable(rawValue: string): string | null {
@@ -928,6 +1162,18 @@ function sanitizeDriverExecutable(rawValue: string): string | null {
   }
 
   return normalized;
+}
+
+function sanitizeUpsConfValue(rawValue: string): string | null {
+  const sanitized = rawValue
+    .trim()
+    .replace(/^["']|["']$/gu, '');
+
+  if (!sanitized) {
+    return null;
+  }
+
+  return sanitized;
 }
 
 function formatCommandLineForLog(
@@ -965,6 +1211,195 @@ function formatLocalProcessEarlyExitError(
   }
 
   return parts.join('\n');
+}
+
+function classifyLocalDriverLaunchIssueFromEarlyExit(options: {
+  driverExecutable: string;
+  configuredPort: string | null;
+  commandLine: string;
+  capturedOutput: { stdout: string; stderr: string };
+  technicalDetails: string;
+}): LocalDriverLaunchIssue {
+  const combinedOutput = [
+    options.capturedOutput.stdout,
+    options.capturedOutput.stderr,
+    options.technicalDetails,
+  ]
+    .filter(Boolean)
+    .join('\n');
+  const openFailure = detectComOpenFailure(combinedOutput);
+
+  if (openFailure.matched) {
+    const resolvedPort = openFailure.port ?? options.configuredPort ?? undefined;
+    return {
+      code: 'SERIAL_COM_OPEN_FAILED',
+      summary: resolvedPort
+        ? `Driver failed to open ${resolvedPort}.`
+        : 'Driver failed to open the configured COM port.',
+      occurredAt: new Date().toISOString(),
+      signature: `SERIAL_COM_OPEN_FAILED:${resolvedPort ?? 'unknown'}:${options.driverExecutable}`,
+      driverExecutable: options.driverExecutable,
+      port: resolvedPort,
+      commandLine: options.commandLine,
+      stdout: options.capturedOutput.stdout || undefined,
+      stderr: options.capturedOutput.stderr || undefined,
+      technicalDetails: truncateTechnicalDetails(options.technicalDetails),
+    };
+  }
+
+  return {
+    code: 'SERIAL_DRIVER_LAUNCH_FAILED',
+    summary: 'Driver launch failed during startup.',
+    occurredAt: new Date().toISOString(),
+    signature: `SERIAL_DRIVER_LAUNCH_FAILED:${options.driverExecutable}`,
+    driverExecutable: options.driverExecutable,
+    port: options.configuredPort ?? undefined,
+    commandLine: options.commandLine,
+    stdout: options.capturedOutput.stdout || undefined,
+    stderr: options.capturedOutput.stderr || undefined,
+    technicalDetails: truncateTechnicalDetails(options.technicalDetails),
+  };
+}
+
+function detectComOpenFailure(text: string): {
+  matched: boolean;
+  port: string | null;
+} {
+  const patterns = [
+    /(?:could\s+not|cannot|unable\s+to|failed\s+to)\s+open\s+(com\d+)/iu,
+    /cannot\s+open\s+(com\d+)/iu,
+    /open\s+(com\d+)\s+failed/iu,
+  ];
+
+  for (const pattern of patterns) {
+    const match = text.match(pattern);
+    if (!match) {
+      continue;
+    }
+
+    return {
+      matched: true,
+      port: normalizeComPortToken(match[1]),
+    };
+  }
+
+  const genericMatch = /(?:could\s+not|cannot|unable\s+to|failed\s+to)\s+open\s+com/iu.test(
+    text,
+  );
+  return {
+    matched: genericMatch,
+    port: null,
+  };
+}
+
+async function detectComPortPresenceForLaunch(port: string): Promise<{
+  exists: boolean | null;
+  detectedPorts: string[];
+  detectionError?: string;
+}> {
+  if (process.platform !== 'win32') {
+    return {
+      exists: null,
+      detectedPorts: [],
+    };
+  }
+
+  try {
+    const detectedPorts = await listWindowsComPorts();
+    return {
+      exists: detectedPorts.includes(port),
+      detectedPorts,
+    };
+  } catch (error) {
+    return {
+      exists: null,
+      detectedPorts: [],
+      detectionError: summarizeUnknownError(error),
+    };
+  }
+}
+
+async function listWindowsComPorts(): Promise<string[]> {
+  if (process.platform !== 'win32') {
+    return [];
+  }
+
+  const script = '[System.IO.Ports.SerialPort]::GetPortNames()';
+  const { stdout } = await execFileAsync(
+    'powershell.exe',
+    ['-NoProfile', '-WindowStyle', 'Hidden', '-Command', script],
+    {
+      windowsHide: true,
+      timeout: 10 * 1000,
+    },
+  );
+
+  return parseComPortOutput(stdout);
+}
+
+function parseComPortOutput(stdout: string): string[] {
+  const ports = new Set<string>();
+  for (const line of stdout.split(/\r?\n/u)) {
+    const normalized = normalizeComPortToken(line);
+    if (normalized) {
+      ports.add(normalized);
+    }
+  }
+
+  return [...ports].sort(sortComPorts);
+}
+
+function sortComPorts(left: string, right: string): number {
+  const leftNum = Number(left.replace(/^COM/iu, ''));
+  const rightNum = Number(right.replace(/^COM/iu, ''));
+  return leftNum - rightNum;
+}
+
+function normalizeComPortToken(value: string | null | undefined): string | null {
+  if (typeof value !== 'string') {
+    return null;
+  }
+
+  const candidate = value.trim().toUpperCase();
+  if (!COM_PORT_PATTERN.test(candidate)) {
+    return null;
+  }
+
+  return candidate;
+}
+
+function formatComPrecheckTechnicalDetails(options: {
+  port: string;
+  detectedPorts: string[];
+  detectionError?: string;
+}): string {
+  const lines = [
+    'Serial COM pre-launch check failed.',
+    `Configured port: ${options.port}`,
+    `Detected COM ports: ${options.detectedPorts.length > 0 ? options.detectedPorts.join(', ') : '(none)'}`,
+  ];
+
+  if (options.detectionError) {
+    lines.push(`Detection error: ${options.detectionError}`);
+  }
+
+  return lines.join('\n');
+}
+
+function truncateTechnicalDetails(value: string): string {
+  if (value.length <= MAX_LOCAL_DRIVER_TECHNICAL_DETAILS_LENGTH) {
+    return value;
+  }
+
+  return `${value.slice(0, MAX_LOCAL_DRIVER_TECHNICAL_DETAILS_LENGTH)}\n...[truncated]`;
+}
+
+function summarizeUnknownError(error: unknown): string {
+  if (error instanceof Error) {
+    return error.message;
+  }
+
+  return String(error);
 }
 
 function prettyJson(payload: unknown): string {

@@ -28,6 +28,8 @@
   --radius-sm: 8px;
   --shadow-card: 0 4px 12px rgba(0, 0, 0, 0.05);
   --transition: 180ms ease;
+  --z-reconnect-overlay: 9999;
+  --z-driver-log-dialog: 10010;
 
   font-family: 'Segoe UI', Inter, Roboto, -apple-system, BlinkMacSystemFont,
     sans-serif;
@@ -1210,7 +1212,7 @@ body,
 .reconnect-overlay {
   position: fixed;
   inset: 0;
-  z-index: 9999;
+  z-index: var(--z-reconnect-overlay);
   display: flex;
   align-items: center;
   justify-content: center;
@@ -1290,6 +1292,152 @@ body,
 .reconnect-overlay-transition-to .reconnect-card {
   opacity: 1;
   transform: translateY(0) scale(1);
+}
+
+.driver-launch-issue-layer {
+  position: fixed;
+  inset: 0;
+  z-index: var(--z-driver-log-dialog);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 24px;
+}
+
+.driver-launch-issue-card {
+  width: min(920px, 100%);
+  max-height: min(82vh, 760px);
+  background: var(--color-bg-card);
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius);
+  box-shadow: var(--shadow-card);
+  color: var(--color-text);
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+}
+
+.driver-launch-issue-header {
+  padding: 18px 20px 14px;
+  border-bottom: 1px solid var(--color-border);
+  background: var(--color-bg-input);
+}
+
+.driver-launch-issue-title {
+  font-size: 1.05rem;
+  font-weight: 700;
+  margin-bottom: 8px;
+  color: var(--color-text);
+}
+
+.driver-launch-issue-summary {
+  font-size: 0.88rem;
+  line-height: 1.45;
+  color: var(--color-text-muted);
+}
+
+.driver-launch-issue-meta {
+  margin-top: 10px;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+
+.driver-launch-issue-code,
+.driver-launch-issue-port {
+  display: inline-flex;
+  align-items: center;
+  border: 1px solid var(--color-border);
+  border-radius: 999px;
+  padding: 4px 10px;
+  font-size: 0.78rem;
+  font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+  background: var(--color-bg-card);
+}
+
+.driver-launch-issue-code {
+  color: var(--color-error);
+  border-color: rgba(239, 68, 68, 0.35);
+}
+
+.driver-launch-issue-port {
+  color: var(--color-text-muted);
+}
+
+.driver-launch-issue-body {
+  padding: 16px 20px;
+  overflow-y: auto;
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+
+.driver-launch-issue-rescan-status {
+  font-size: 0.84rem;
+  border-radius: var(--radius-sm);
+  border: 1px solid var(--color-border);
+  padding: 9px 11px;
+  line-height: 1.4;
+}
+
+.driver-launch-issue-rescan-status--success {
+  color: var(--color-success);
+  border-color: rgba(16, 163, 127, 0.35);
+  background: var(--color-success-glow);
+}
+
+.driver-launch-issue-rescan-status--error {
+  color: var(--color-error);
+  border-color: rgba(239, 68, 68, 0.35);
+  background: var(--color-error-glow);
+}
+
+.driver-launch-issue-rescan-status--neutral {
+  color: var(--color-text-muted);
+  background: var(--color-bg-input);
+}
+
+.driver-launch-issue-section {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.driver-launch-issue-section-title {
+  font-size: 0.82rem;
+  font-weight: 600;
+  color: var(--color-text-muted);
+}
+
+.driver-launch-issue-pre {
+  margin: 0;
+  background: var(--color-bg-input);
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-sm);
+  color: var(--color-text);
+  font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+  font-size: 0.8rem;
+  line-height: 1.45;
+  white-space: pre-wrap;
+  word-break: break-word;
+  max-height: 220px;
+  overflow: auto;
+  padding: 10px 12px;
+}
+
+.driver-launch-issue-actions {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: 10px;
+  padding: 14px 20px 16px;
+  border-top: 1px solid var(--color-border);
+}
+
+.driver-launch-issue-actions-right {
+  display: inline-flex;
+  gap: 8px;
 }
 
 /* ===================================================================

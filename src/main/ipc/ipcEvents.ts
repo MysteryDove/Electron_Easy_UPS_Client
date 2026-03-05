@@ -1,5 +1,6 @@
 import { IPC_EVENTS } from './ipcChannels';
 import type { TelemetryValues } from '../db/telemetryRepository';
+import type { LocalDriverLaunchIssue } from './ipcChannels';
 
 export type ConnectionState =
   | 'idle'
@@ -27,5 +28,8 @@ export type MainToRendererEventPayloads = {
   };
   [IPC_EVENTS.themeSystemChanged]: {
     shouldUseDarkColors: boolean;
+  };
+  [IPC_EVENTS.localDriverLaunchIssueChanged]: {
+    issue: LocalDriverLaunchIssue | null;
   };
 };

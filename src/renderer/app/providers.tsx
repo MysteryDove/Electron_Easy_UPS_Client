@@ -9,6 +9,7 @@ import {
 import type { AppConfig } from '../../main/config/configSchema';
 import type { ConnectionState } from '../../main/ipc/ipcEvents';
 import type { TelemetryValues } from '../../main/db/telemetryRepository';
+import type { LocalDriverLaunchIssue } from '../../main/ipc/ipcChannels';
 import i18n, { fallbackSystem } from '../i18n';
 import { I18nextProvider } from 'react-i18next';
 
@@ -27,12 +28,14 @@ type ConnectionContextValue = {
     state: ConnectionState;
     staticData: Record<string, string> | null;
     lastTelemetry: { ts: string; values: TelemetryValues } | null;
+    localDriverLaunchIssue: LocalDriverLaunchIssue | null;
 };
 
 const ConnectionContext = createContext<ConnectionContextValue>({
     state: 'idle',
     staticData: null,
     lastTelemetry: null,
+    localDriverLaunchIssue: null,
 });
 
 export function useConnection() {
@@ -89,6 +92,8 @@ export function AppProviders({ children }: { children: ReactNode }) {
         ts: string;
         values: TelemetryValues;
     } | null>(null);
+    const [localDriverLaunchIssue, setLocalDriverLaunchIssue] =
+        useState<LocalDriverLaunchIssue | null>(null);
 
     useEffect(() => {
         const unsubs: Array<() => void> = [];
@@ -103,6 +108,7 @@ export function AppProviders({ children }: { children: ReactNode }) {
                 if (stateResult) {
                     setConnectionState(stateResult.state);
                     setStaticData(stateResult.staticData);
+                    setLocalDriverLaunchIssue(stateResult.localDriverLaunchIssue ?? null);
                 }
 
                 if (latestTelemetryResult) {
@@ -145,12 +151,26 @@ export function AppProviders({ children }: { children: ReactNode }) {
             );
         }
 
+        if (window.electronApi?.events?.onLocalDriverLaunchIssueChanged) {
+            unsubs.push(
+                // eslint-disable-next-line @typescript-eslint/no-explicit-any
+                window.electronApi.events.onLocalDriverLaunchIssueChanged((payload: any) => {
+                    setLocalDriverLaunchIssue(payload.issue ?? null);
+                }),
+            );
+        }
+
         return () => unsubs.forEach((fn) => fn());
     }, []);
 
     const connectionValue = useMemo<ConnectionContextValue>(
-        () => ({ state: connectionState, staticData, lastTelemetry }),
-        [connectionState, staticData, lastTelemetry],
+        () => ({
+            state: connectionState,
+            staticData,
+            lastTelemetry,
+            localDriverLaunchIssue,
+        }),
+        [connectionState, staticData, lastTelemetry, localDriverLaunchIssue],
     );
 
     // -- Config --

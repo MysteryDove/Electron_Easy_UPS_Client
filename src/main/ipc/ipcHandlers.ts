@@ -1,4 +1,4 @@
-import { ipcMain, nativeTheme, BrowserWindow, dialog } from 'electron';
+import { ipcMain, nativeTheme, BrowserWindow, dialog, shell } from 'electron';
 import type { ConfigStore } from '../config/configStore';
 import type { RetentionService } from '../db/retentionService';
 import type {
@@ -22,6 +22,7 @@ import {
   listSerialDrivers,
   prepareLocalDriver,
   prepareLocalNut,
+  prepareUsbHid,
   validateNutFolder,
   waitForSerialDriverReady,
 } from '../nut/nutSetupService';
@@ -31,6 +32,8 @@ import {
   type NutSetupListSerialDriversPayload,
   type NutSetupPrepareLocalDriverPayload,
   type NutSetupPrepareLocalDriverResult,
+  type NutSetupPrepareUsbHidPayload,
+  type SystemOpenExternalPayload,
   type WizardTestConnectionPayload,
   type WizardTestConnectionResult,
   type WizardCompletePayload,
@@ -137,7 +140,13 @@ export function registerIpcHandlers(dependencies: IpcHandlerDependencies): void 
   ipcMain.handle(IPC_CHANNELS.nutGetState, async () => ({
     state: dependencies.nutPollingService.getState(),
     staticData: dependencies.nutPollingService.getStaticSnapshot(),
+    localDriverLaunchIssue:
+      dependencies.nutPollingService.getLocalDriverLaunchIssue(),
   }));
+
+  ipcMain.handle(IPC_CHANNELS.nutRetryLocalDriverLaunch, async () =>
+    dependencies.nutPollingService.retryLocalDriverLaunchAfterIssue(),
+  );
 
   ipcMain.handle(
     IPC_CHANNELS.wizardTestConnection,
@@ -172,9 +181,22 @@ export function registerIpcHandlers(dependencies: IpcHandlerDependencies): void 
   });
 
   ipcMain.handle(
+    IPC_CHANNELS.systemOpenExternal,
+    async (_event, payload: unknown) => {
+      const normalizedPayload = normalizeSystemOpenExternalPayload(payload);
+      await shell.openExternal(normalizedPayload.url);
+    },
+  );
+
+  ipcMain.handle(
     IPC_CHANNELS.nutSetupValidateFolder,
-    async (_event, payload: unknown) =>
-      validateNutFolder(normalizeNutSetupValidatePayload(payload).folderPath),
+    async (_event, payload: unknown) => {
+      const normalizedPayload = normalizeNutSetupValidatePayload(payload);
+      return validateNutFolder(normalizedPayload.folderPath, {
+        requireUsbHidExperimentalSupport:
+          normalizedPayload.requireUsbHidExperimentalSupport,
+      });
+    },
   );
 
   ipcMain.handle(
@@ -240,6 +262,30 @@ export function registerIpcHandlers(dependencies: IpcHandlerDependencies): void 
         return prepareResult;
       } catch (error) {
         return classifySerialDriverFailure(normalizedPayload, error);
+      }
+    },
+  );
+
+  ipcMain.handle(
+    IPC_CHANNELS.nutSetupPrepareUsbHid,
+    async (_event, payload: unknown) => {
+      const normalizedPayload = normalizeNutSetupPrepareUsbHidPayload(payload);
+      const prepareResult = await prepareUsbHid(normalizedPayload);
+      if (!prepareResult.success) {
+        return prepareResult;
+      }
+
+      try {
+        await dependencies.nutPollingService.startLocalComponentsForWizard(
+          normalizedPayload.folderPath,
+          normalizedPayload.upsName,
+        );
+        return prepareResult;
+      } catch (error) {
+        return {
+          success: false,
+          error: error instanceof Error ? error.message : String(error),
+        };
       }
     },
   );
@@ -443,12 +489,24 @@ function normalizeNutSetupValidatePayload(
     throw new Error('NUT setup validate payload must be an object');
   }
 
-  const candidate = payload as { folderPath?: unknown };
+  const candidate = payload as {
+    folderPath?: unknown;
+    requireUsbHidExperimentalSupport?: unknown;
+  };
   if (typeof candidate.folderPath !== 'string' || !candidate.folderPath.trim()) {
     throw new Error('folderPath is required');
   }
 
-  return { folderPath: candidate.folderPath };
+  const normalizedPayload: NutSetupValidateFolderPayload = {
+    folderPath: candidate.folderPath,
+  };
+
+  if (typeof candidate.requireUsbHidExperimentalSupport === 'boolean') {
+    normalizedPayload.requireUsbHidExperimentalSupport =
+      candidate.requireUsbHidExperimentalSupport;
+  }
+
+  return normalizedPayload;
 }
 
 function normalizeNutSetupListSerialDriversPayload(
@@ -574,6 +632,70 @@ function normalizeNutSetupPrepareDriverPayload(
   }
 
   return result;
+}
+
+function normalizeNutSetupPrepareUsbHidPayload(
+  payload: unknown,
+): NutSetupPrepareUsbHidPayload {
+  if (typeof payload !== 'object' || payload === null) {
+    throw new Error('NUT setup prepare-usbhid payload must be an object');
+  }
+
+  const candidate = payload as Record<string, unknown>;
+  const requiredStringFields: Array<keyof NutSetupPrepareUsbHidPayload> = [
+    'folderPath',
+    'upsName',
+    'port',
+  ];
+
+  for (const field of requiredStringFields) {
+    if (typeof candidate[field] !== 'string' || !(candidate[field] as string).trim()) {
+      throw new Error(`${field} is required`);
+    }
+  }
+
+  const result: NutSetupPrepareUsbHidPayload = {
+    folderPath: candidate.folderPath as string,
+    upsName: candidate.upsName as string,
+    port: candidate.port as string,
+  };
+
+  if (typeof candidate.vendorid === 'string' && candidate.vendorid.trim()) {
+    result.vendorid = candidate.vendorid;
+  }
+
+  if (typeof candidate.productid === 'string' && candidate.productid.trim()) {
+    result.productid = candidate.productid;
+  }
+
+  return result;
+}
+
+function normalizeSystemOpenExternalPayload(
+  payload: unknown,
+): SystemOpenExternalPayload {
+  if (typeof payload !== 'object' || payload === null) {
+    throw new Error('System open-external payload must be an object');
+  }
+
+  const candidate = payload as Record<string, unknown>;
+  if (typeof candidate.url !== 'string' || !candidate.url.trim()) {
+    throw new Error('url is required');
+  }
+
+  let parsedUrl: URL;
+  try {
+    parsedUrl = new URL(candidate.url);
+  } catch {
+    throw new Error('url must be a valid absolute URL');
+  }
+
+  const protocol = parsedUrl.protocol.toLowerCase();
+  if (protocol !== 'http:' && protocol !== 'https:') {
+    throw new Error('Only http(s) URLs are allowed');
+  }
+
+  return { url: parsedUrl.toString() };
 }
 
 async function classifySerialDriverFailure(

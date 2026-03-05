@@ -152,7 +152,7 @@ export function SerialSetupForm({
         <a
           href="https://networkupstools.org/stable-hcl.html"
           target="_blank"
-          rel="noreferrer"
+          rel="noopener noreferrer"
           className="wizard-inline-link"
           style={{ display: 'inline-block' }}
         >

@@ -1,16 +1,18 @@
 import { useTranslation } from 'react-i18next';
-import { Router, MonitorCog, Cable } from 'lucide-react';
+import { Router, MonitorCog, Cable, Usb } from 'lucide-react';
 
 type ChooseSetupModeStepProps = {
   onChooseDirectNut: () => void;
   onChooseSnmpSetup: () => void;
   onChooseSerialSetup: () => void;
+  onChooseUsbHidSetup: () => void;
 };
 
 export function ChooseSetupModeStep({
   onChooseDirectNut,
   onChooseSnmpSetup,
   onChooseSerialSetup,
+  onChooseUsbHidSetup,
 }: ChooseSetupModeStepProps) {
   const { t } = useTranslation();
 
@@ -92,6 +94,29 @@ export function ChooseSetupModeStep({
             <Cable
               size={20}
               style={{ flexShrink: 0, marginLeft: '12px' }}
+            />
+          </button>
+
+          <button
+            className="btn btn--secondary"
+            onClick={onChooseUsbHidSetup}
+            style={{
+              width: '100%',
+              justifyContent: 'space-between',
+              alignItems: 'center',
+              textAlign: 'left',
+              padding: '16px',
+            }}
+          >
+            <span style={{ display: 'flex', flexDirection: 'column', gap: '2px', flex: 1 }}>
+              <strong>{t('wizard.modeUsbHidSetup', 'Set Up USB HID UPS')}</strong>
+              <span className="form-hint">
+                {t('wizard.modeUsbHidSetupDesc', 'Help me configure NUT usbhid-ups with experimental Windows HID support')}
+              </span>
+            </span>
+            <Usb
+              size={20}
+              style={{ flexShrink: 0, marginLeft: '12px', transform: 'rotate(45deg)' }}
             />
           </button>
         </div>

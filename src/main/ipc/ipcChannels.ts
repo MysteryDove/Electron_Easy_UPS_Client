@@ -17,7 +17,10 @@ export const IPC_CHANNELS = {
   nutSetupListSerialDrivers: 'nutSetup:listSerialDrivers',
   nutSetupListComPorts: 'nutSetup:listComPorts',
   nutSetupPrepareLocalDriver: 'nutSetup:prepareLocalDriver',
+  nutSetupPrepareUsbHid: 'nutSetup:prepareUsbHid',
+  systemOpenExternal: 'system:open-external',
   nutGetState: 'nut:get-state',
+  nutRetryLocalDriverLaunch: 'nut:retry-local-driver-launch',
   criticalAlertTest: 'critical-alert:test',
 } as const;
 
@@ -26,6 +29,7 @@ export const IPC_EVENTS = {
   upsStaticData: 'ups:static-data',
   upsTelemetryUpdated: 'ups:telemetry-updated',
   themeSystemChanged: 'theme:system-changed',
+  localDriverLaunchIssueChanged: 'local-driver-launch-issue:changed',
 } as const;
 
 export type WizardTestConnectionPayload = {
@@ -62,12 +66,15 @@ export type NutSetupChooseFolderResult = {
 
 export type NutSetupValidateFolderPayload = {
   folderPath: string;
+  requireUsbHidExperimentalSupport?: boolean;
 };
 
 export type NutSetupValidateFolderResult = {
   valid: boolean;
   missing: string[];
   writable: boolean;
+  usbHidExperimentalSupport?: boolean;
+  usbHidExperimentalMessage?: string;
 };
 
 export type NutSetupPrepareLocalNutPayload = {
@@ -121,6 +128,46 @@ export type NutSetupPrepareLocalDriverResult = {
   success: boolean;
   error?: string;
   errorCode?: NutSetupPrepareLocalDriverErrorCode;
+  technicalDetails?: string;
+};
+
+export type NutSetupPrepareUsbHidPayload = {
+  folderPath: string;
+  upsName: string;
+  port: string;
+  vendorid?: string;
+  productid?: string;
+};
+
+export type NutSetupPrepareUsbHidResult = {
+  success: boolean;
+  error?: string;
+};
+
+export type NutRetryLocalDriverLaunchResult = {
+  success: boolean;
+  error?: string;
+};
+
+export type SystemOpenExternalPayload = {
+  url: string;
+};
+
+export type LocalDriverLaunchIssueCode =
+  | 'SERIAL_COM_PRECHECK_MISSING'
+  | 'SERIAL_COM_OPEN_FAILED'
+  | 'SERIAL_DRIVER_LAUNCH_FAILED';
+
+export type LocalDriverLaunchIssue = {
+  code: LocalDriverLaunchIssueCode;
+  summary: string;
+  occurredAt: string;
+  signature: string;
+  driverExecutable?: string;
+  port?: string;
+  commandLine?: string;
+  stdout?: string;
+  stderr?: string;
   technicalDetails?: string;
 };
 
@@ -181,12 +228,25 @@ export type RendererInvokeMap = {
     request: NutSetupPrepareLocalDriverPayload;
     response: NutSetupPrepareLocalDriverResult;
   };
+  [IPC_CHANNELS.nutSetupPrepareUsbHid]: {
+    request: NutSetupPrepareUsbHidPayload;
+    response: NutSetupPrepareUsbHidResult;
+  };
+  [IPC_CHANNELS.systemOpenExternal]: {
+    request: SystemOpenExternalPayload;
+    response: void;
+  };
   [IPC_CHANNELS.nutGetState]: {
     request: void;
     response: {
       state: import('./ipcEvents').ConnectionState;
       staticData: Record<string, string> | null;
+      localDriverLaunchIssue: LocalDriverLaunchIssue | null;
     };
+  };
+  [IPC_CHANNELS.nutRetryLocalDriverLaunch]: {
+    request: void;
+    response: NutRetryLocalDriverLaunchResult;
   };
 };
 

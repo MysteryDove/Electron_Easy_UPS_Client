@@ -10,6 +10,7 @@ import type {
   NutSetupPrepareLocalDriverPayload,
   NutSetupPrepareLocalDriverResult,
   NutSetupPrepareLocalNutPayload,
+  NutSetupPrepareUsbHidPayload,
   NutSetupValidateFolderResult,
 } from '../../main/ipc/ipcChannels';
 import { ChooseSetupModeStep } from './setupWizard/ChooseSetupModeStep';
@@ -49,6 +50,7 @@ const SNMP_TARGET_PATTERN = new RegExp(
   `^${IPV4_OCTET_PATTERN}(?:\\.${IPV4_OCTET_PATTERN}){3}(?::([1-9]\\d{0,4}))?$`,
 );
 const COM_PORT_PATTERN = /^COM\d+$/i;
+const USB_DEVICE_ID_PATTERN = /^[0-9a-f]{4}$/i;
 
 export function SetupWizardPage() {
   const navigate = routerUseNavigate();
@@ -110,6 +112,10 @@ export function SetupWizardPage() {
   const [driverName, setDriverName] = useState('');
   const [driverPort, setDriverPort] = useState('');
   const [ttymode, setTtymode] = useState('raw');
+  const [usbPort] = useState('auto');
+  const [specifyVidPid, setSpecifyVidPid] = useState(false);
+  const [vendorId, setVendorId] = useState('');
+  const [productId, setProductId] = useState('');
   const [availableDrivers, setAvailableDrivers] = useState<string[]>([]);
   const [availableComPorts, setAvailableComPorts] = useState<string[]>([]);
   const [driverFilter, setDriverFilter] = useState('');
@@ -129,9 +135,13 @@ export function SetupWizardPage() {
   const normalizedDriverFilter =
     typeof driverFilter === 'string' ? driverFilter : '';
   const normalizedTtymode = typeof ttymode === 'string' ? ttymode : '';
+  const normalizedVendorId = vendorId.trim().toLowerCase();
+  const normalizedProductId = productId.trim().toLowerCase();
   const upsNameValid = UPS_NAME_PATTERN.test(upsName);
   const snmpTargetValid = isValidSnmpTarget(snmpTarget);
   const normalizedDriverPort = normalizeComPort(driverPort);
+  const vendorIdValid = USB_DEVICE_ID_PATTERN.test(normalizedVendorId);
+  const productIdValid = USB_DEVICE_ID_PATTERN.test(normalizedProductId);
   const driverNameValid =
     normalizedDriverName.trim().length > 0 &&
     availableDrivers.includes(normalizedDriverName);
@@ -166,6 +176,18 @@ export function SetupWizardPage() {
     driverNameValid &&
     driverPortValid &&
     ttymodeValid &&
+    !validatingFolder &&
+    installStatus !== 'installing';
+
+  const canPrepareLocalUsbHid =
+    isFolderValid &&
+    upsNameValid &&
+    (!specifyVidPid || (
+      normalizedVendorId.length > 0 &&
+      normalizedProductId.length > 0 &&
+      vendorIdValid &&
+      productIdValid
+    )) &&
     !validatingFolder &&
     installStatus !== 'installing';
 
@@ -374,6 +396,7 @@ export function SetupWizardPage() {
 
       const validation = await window.electronApi.nutSetup.validateFolder({
         folderPath: selection.folderPath,
+        requireUsbHidExperimentalSupport: mode === 'usbHidSetup',
       });
       setFolderValidation(validation);
 
@@ -507,6 +530,53 @@ export function SetupWizardPage() {
     handlePrepareLocalSuccess,
   ]);
 
+  const handlePrepareLocalUsbHid = useCallback(async () => {
+    if (!canPrepareLocalUsbHid) {
+      return;
+    }
+
+    setInstallStatus('installing');
+    setInstallError(null);
+    setInstallErrorDetails(null);
+
+    try {
+      const payload: NutSetupPrepareUsbHidPayload = {
+        folderPath: nutFolderPath,
+        upsName,
+        port: usbPort,
+        ...(specifyVidPid
+          ? {
+            vendorid: normalizedVendorId,
+            productid: normalizedProductId,
+          }
+          : {}),
+      };
+
+      const result = await window.electronApi.nutSetup.prepareUsbHid(payload);
+      if (!result.success) {
+        setInstallStatus('error');
+        setInstallError(result.error ?? 'Failed to configure and start local NUT USB HID driver');
+        setInstallErrorDetails(null);
+        return;
+      }
+
+      handlePrepareLocalSuccess();
+    } catch (err) {
+      setInstallStatus('error');
+      setInstallError(err instanceof Error ? err.message : 'Failed to configure and start local NUT USB HID driver');
+      setInstallErrorDetails(null);
+    }
+  }, [
+    canPrepareLocalUsbHid,
+    nutFolderPath,
+    upsName,
+    usbPort,
+    specifyVidPid,
+    normalizedVendorId,
+    normalizedProductId,
+    handlePrepareLocalSuccess,
+  ]);
+
   if (step === 'choose') {
     return (
       <ChooseSetupModeStep
@@ -552,6 +622,30 @@ export function SetupWizardPage() {
           setAvailableComPorts([]);
           setStep('nutSetup');
         }}
+        onChooseUsbHidSetup={() => {
+          setMode('usbHidSetup');
+          setInstallStatus('idle');
+          setInstallError(null);
+          setInstallErrorDetails(null);
+          setUpsName((previous) => {
+            const normalized = previous.trim().toLowerCase();
+            if (!normalized || normalized === 'snmpups' || normalized === 'serialups') {
+              return 'usbups';
+            }
+            return previous;
+          });
+          setNutFolderPath('');
+          setFolderValidation(null);
+          setDriverFilter('');
+          setDriverName('');
+          setAvailableDrivers([]);
+          setDriverPort('');
+          setAvailableComPorts([]);
+          setSpecifyVidPid(false);
+          setVendorId('');
+          setProductId('');
+          setStep('nutSetup');
+        }}
       />
     );
   }
@@ -571,9 +665,11 @@ export function SetupWizardPage() {
         installErrorDetails={installErrorDetails}
         canPrepareLocalNut={canPrepareLocalNut}
         canPrepareLocalDriver={canPrepareLocalDriver}
+        canPrepareLocalUsbHid={canPrepareLocalUsbHid}
         onChooseNutFolder={handleChooseNutFolder}
         onPrepareLocalNut={handlePrepareLocalNut}
         onPrepareLocalDriver={handlePrepareLocalDriver}
+        onPrepareLocalUsbHid={handlePrepareLocalUsbHid}
         onBack={() => setStep('choose')}
         snmpFormProps={{
           upsName,
@@ -671,6 +767,32 @@ export function SetupWizardPage() {
           },
           onTtymodeChange: (value: string) => {
             setTtymode(value);
+            setInstallStatus('idle');
+          },
+        }}
+        usbHidFormProps={{
+          upsName,
+          upsNameValid,
+          port: usbPort,
+          specifyVidPid,
+          vendorId: normalizedVendorId,
+          productId: normalizedProductId,
+          vendorIdValid,
+          productIdValid,
+          onUpsNameChange: (value: string) => {
+            setUpsName(value);
+            setInstallStatus('idle');
+          },
+          onSpecifyVidPidChange: (value: boolean) => {
+            setSpecifyVidPid(value);
+            setInstallStatus('idle');
+          },
+          onVendorIdChange: (value: string) => {
+            setVendorId(value);
+            setInstallStatus('idle');
+          },
+          onProductIdChange: (value: string) => {
+            setProductId(value);
             setInstallStatus('idle');
           },
         }}

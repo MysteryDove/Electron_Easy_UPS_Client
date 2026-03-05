@@ -11,6 +11,8 @@ import type {
   NutSetupPrepareLocalDriverResult,
   NutSetupPrepareLocalNutPayload,
   NutSetupPrepareLocalNutResult,
+  NutSetupPrepareUsbHidPayload,
+  NutSetupPrepareUsbHidResult,
   NutSetupValidateFolderResult,
 } from '../ipc/ipcChannels';
 
@@ -21,6 +23,10 @@ const REQUIRED_FILES = ['sbin/upsd.exe', 'bin/nut.exe'];
 const SNMP_DRIVER_RELATIVE_PATH_CANDIDATES = [
   'bin/snmp-ups.exe',
   'sbin/snmp-ups.exe',
+];
+const USB_HID_DRIVER_RELATIVE_PATH_CANDIDATES = [
+  'bin/usbhid-ups.exe',
+  'sbin/usbhid-ups.exe',
 ];
 const UPSC_RELATIVE_PATH_CANDIDATES = ['bin/upsc.exe', 'sbin/upsc.exe'];
 const SERIAL_DRIVERS = [
@@ -76,32 +82,59 @@ const SNMP_TARGET_PATTERN = new RegExp(
   `^${IPV4_OCTET_PATTERN}(?:\\.${IPV4_OCTET_PATTERN}){3}(?::([1-9]\\d{0,4}))?$`,
 );
 const COM_PORT_PATTERN = /^COM\d+$/i;
+const USB_DEVICE_ID_PATTERN = /^[0-9a-f]{4}$/i;
 const SERIAL_DRIVER_SET = new Set<string>(SERIAL_DRIVERS);
 const SERIAL_DRIVER_READY_TIMEOUT_MS = 45 * 1000;
 const SERIAL_DRIVER_READY_POLL_INTERVAL_MS = 1000;
 const UPSC_QUERY_TIMEOUT_MS = 5 * 1000;
+const USB_HID_HELP_TIMEOUT_MS = 10 * 1000;
 const UPSC_TARGET_HOST = '127.0.0.1:3493';
 const UPS_STATUS_WAIT_TOKEN = 'WAIT';
 
 export async function validateNutFolder(
   folderPath: string,
+  options?: {
+    requireUsbHidExperimentalSupport?: boolean;
+  },
 ): Promise<NutSetupValidateFolderResult> {
+  const requireUsbHidExperimentalSupport =
+    options?.requireUsbHidExperimentalSupport === true;
   const missing: string[] = [];
   const normalizedFolder = folderPath.trim();
+  let usbHidExperimentalSupport: boolean | undefined;
+  let usbHidExperimentalMessage: string | undefined;
 
   if (!normalizedFolder) {
     const expectedEntries = [
       ...REQUIRED_DIRS.map((entry) => `${entry}/`),
       ...REQUIRED_FILES,
     ];
+    if (requireUsbHidExperimentalSupport) {
+      expectedEntries.push(
+        `${USB_HID_DRIVER_RELATIVE_PATH_CANDIDATES.join(' or ')} (with experimentalhid support)`,
+      );
+    }
     console.warn(
       '[nutSetupService] validateNutFolder failed: folderPath is empty',
       { expectedEntries },
     );
+
+    if (requireUsbHidExperimentalSupport) {
+      usbHidExperimentalSupport = false;
+      usbHidExperimentalMessage =
+        'Folder path is empty. Select the extracted experimental NUT build folder.';
+    }
+
     return {
       valid: false,
       missing: expectedEntries,
       writable: false,
+      ...(requireUsbHidExperimentalSupport
+        ? {
+          usbHidExperimentalSupport,
+          usbHidExperimentalMessage,
+        }
+        : {}),
     };
   }
 
@@ -134,11 +167,50 @@ export async function validateNutFolder(
       '[nutSetupService] validateNutFolder failed: required entries are missing',
       { folderPath: normalizedFolder, missing },
     );
+
+    if (requireUsbHidExperimentalSupport) {
+      usbHidExperimentalSupport = false;
+      usbHidExperimentalMessage =
+        'NUT folder structure is incomplete. Make sure the extracted folder contains the required files.';
+    }
+
     return {
       valid: false,
       missing,
       writable: false,
+      ...(requireUsbHidExperimentalSupport
+        ? {
+          usbHidExperimentalSupport,
+          usbHidExperimentalMessage,
+        }
+        : {}),
     };
+  }
+
+  if (requireUsbHidExperimentalSupport) {
+    const checkResult = await verifyUsbHidExperimentalSupport(normalizedFolder);
+    usbHidExperimentalSupport = checkResult.supported;
+    usbHidExperimentalMessage = checkResult.message;
+
+    if (!checkResult.supported) {
+      missing.push(
+        `${USB_HID_DRIVER_RELATIVE_PATH_CANDIDATES.join(' or ')} with -h output containing "experimentalhid"`,
+      );
+      console.warn(
+        '[nutSetupService] validateNutFolder failed: missing experimental usbhid-ups support',
+        {
+          folderPath: normalizedFolder,
+          message: checkResult.message,
+        },
+      );
+      return {
+        valid: false,
+        missing,
+        writable: false,
+        usbHidExperimentalSupport,
+        usbHidExperimentalMessage,
+      };
+    }
   }
 
   const writable = await isNutFolderWritable(normalizedFolder);
@@ -153,6 +225,12 @@ export async function validateNutFolder(
     valid: true,
     missing,
     writable,
+    ...(requireUsbHidExperimentalSupport
+      ? {
+        usbHidExperimentalSupport,
+        usbHidExperimentalMessage,
+      }
+      : {}),
   };
 }
 
@@ -279,6 +357,38 @@ export async function prepareLocalDriver(
   }
 }
 
+export async function prepareUsbHid(
+  payload: NutSetupPrepareUsbHidPayload,
+): Promise<NutSetupPrepareUsbHidResult> {
+  try {
+    const normalized = normalizePrepareUsbHidPayload(payload);
+    const validationResult = await validateNutFolder(normalized.folderPath, {
+      requireUsbHidExperimentalSupport: true,
+    });
+    if (!validationResult.valid) {
+      return {
+        success: false,
+        error: validationResult.usbHidExperimentalMessage
+          ? `Invalid NUT folder for USB HID setup. ${validationResult.usbHidExperimentalMessage}`
+          : `Invalid NUT folder structure. Missing: ${validationResult.missing.join(', ')}`,
+      };
+    }
+
+    await writeNutConfigFilesFromContent({
+      folderPath: normalized.folderPath,
+      upsConf: buildUsbHidUpsConf(normalized),
+      requireElevation: !validationResult.writable,
+    });
+    return { success: true };
+  } catch (error) {
+    console.error('[nutSetupService] prepareUsbHid failed', error);
+    return {
+      success: false,
+      error: error instanceof Error ? error.message : String(error),
+    };
+  }
+}
+
 export async function waitForSerialDriverReady(options: {
   folderPath: string;
   upsName: string;
@@ -354,6 +464,14 @@ type NormalizedPrepareLocalDriverPayload = NutSetupPrepareLocalDriverPayload & {
   driver: string;
   port: string;
   ttymode: string;
+};
+
+type NormalizedPrepareUsbHidPayload = NutSetupPrepareUsbHidPayload & {
+  folderPath: string;
+  upsName: string;
+  port: string;
+  vendorid?: string;
+  productid?: string;
 };
 
 function normalizePrepareLocalNutPayload(
@@ -478,6 +596,55 @@ function normalizePrepareDriverPayload(
   };
 }
 
+function normalizePrepareUsbHidPayload(
+  payload: NutSetupPrepareUsbHidPayload,
+): NormalizedPrepareUsbHidPayload {
+  if (!payload || typeof payload !== 'object') {
+    throw new Error('Invalid USB HID prepare payload');
+  }
+
+  const folderPath = payload.folderPath?.trim();
+  if (!folderPath) {
+    throw new Error('folderPath is required');
+  }
+
+  const upsName = payload.upsName?.trim();
+  if (!upsName || !UPS_NAME_PATTERN.test(upsName)) {
+    throw new Error('upsName must use letters, numbers, or hyphens');
+  }
+
+  const port = payload.port?.trim().toLowerCase() || 'auto';
+  if (port !== 'auto') {
+    throw new Error('port must be auto');
+  }
+
+  const normalizedVendorId = payload.vendorid?.trim().toLowerCase();
+  const normalizedProductId = payload.productid?.trim().toLowerCase();
+  const hasVendorId = Boolean(normalizedVendorId);
+  const hasProductId = Boolean(normalizedProductId);
+
+  if (hasVendorId !== hasProductId) {
+    throw new Error('vendorid and productid must be provided together');
+  }
+
+  if (hasVendorId && (!normalizedVendorId || !USB_DEVICE_ID_PATTERN.test(normalizedVendorId))) {
+    throw new Error('vendorid must be 4 hexadecimal characters');
+  }
+
+  if (hasProductId && (!normalizedProductId || !USB_DEVICE_ID_PATTERN.test(normalizedProductId))) {
+    throw new Error('productid must be 4 hexadecimal characters');
+  }
+
+  return {
+    ...payload,
+    folderPath,
+    upsName,
+    port,
+    ...(hasVendorId ? { vendorid: normalizedVendorId } : {}),
+    ...(hasProductId ? { productid: normalizedProductId } : {}),
+  };
+}
+
 async function writeNutConfigFilesFromContent(
   options: {
     folderPath: string;
@@ -569,6 +736,23 @@ function buildDriverUpsConf(payload: NormalizedPrepareLocalDriverPayload): strin
   return `${lines.join('\r\n')}\r\n`;
 }
 
+function buildUsbHidUpsConf(payload: NormalizedPrepareUsbHidPayload): string {
+  const lines = [
+    `[${payload.upsName}]`,
+    '    experimentalhid',
+    '    pollonly',
+    '    driver = usbhid-ups',
+    `    port = ${payload.port}`,
+  ];
+
+  if (payload.vendorid && payload.productid) {
+    lines.push(`    vendorid = ${payload.vendorid}`);
+    lines.push(`    productid = ${payload.productid}`);
+  }
+
+  return `${lines.join('\r\n')}\r\n`;
+}
+
 async function doesSerialDriverExist(
   folderPath: string,
   driver: string,
@@ -579,6 +763,58 @@ async function doesSerialDriverExist(
       `sbin/${driver}.exe`,
     ]),
   );
+}
+
+async function verifyUsbHidExperimentalSupport(folderPath: string): Promise<{
+  supported: boolean;
+  message: string;
+}> {
+  const usbhidPath = await findFirstExistingRelativeFile(
+    folderPath,
+    USB_HID_DRIVER_RELATIVE_PATH_CANDIDATES,
+  );
+
+  if (!usbhidPath) {
+    return {
+      supported: false,
+      message: `Missing required USB HID driver binary: ${USB_HID_DRIVER_RELATIVE_PATH_CANDIDATES.join(' or ')}`,
+    };
+  }
+
+  let output = '';
+  try {
+    const { stdout, stderr } = await execFileAsync(
+      usbhidPath,
+      ['-h'],
+      {
+        windowsHide: true,
+        timeout: USB_HID_HELP_TIMEOUT_MS,
+      },
+    );
+    output = `${stdout}\n${stderr}`.trim();
+  } catch (error) {
+    const execError = error as Error & { stdout?: string; stderr?: string };
+    output = `${execError.stdout ?? ''}\n${execError.stderr ?? ''}`.trim();
+    if (!output) {
+      return {
+        supported: false,
+        message: `Failed to run usbhid-ups.exe -h (${summarizeExecFailure(error)})`,
+      };
+    }
+  }
+
+  if (!output.toLowerCase().includes('experimentalhid')) {
+    return {
+      supported: false,
+      message:
+        'usbhid-ups.exe was found, but `usbhid-ups.exe -h` output does not contain "experimentalhid". Use the required experimental build.',
+    };
+  }
+
+  return {
+    supported: true,
+    message: 'usbhid-ups.exe reports experimentalhid support.',
+  };
 }
 
 async function probeUpsStatusViaUpsc(

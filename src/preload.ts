@@ -17,10 +17,15 @@ import {
   type NutSetupListSerialDriversResult,
   type NutSetupPrepareLocalDriverPayload,
   type NutSetupPrepareLocalDriverResult,
+  type NutSetupPrepareUsbHidPayload,
+  type NutSetupPrepareUsbHidResult,
   type NutSetupValidateFolderPayload,
   type NutSetupValidateFolderResult,
   type NutSetupPrepareLocalNutPayload,
   type NutSetupPrepareLocalNutResult,
+  type LocalDriverLaunchIssue,
+  type NutRetryLocalDriverLaunchResult,
+  type SystemOpenExternalPayload,
 } from './main/ipc/ipcChannels';
 import type { MainToRendererEventPayloads } from './main/ipc/ipcEvents';
 
@@ -69,14 +74,27 @@ const electronApi = {
       payload: NutSetupPrepareLocalDriverPayload,
     ): Promise<NutSetupPrepareLocalDriverResult> =>
       ipcRenderer.invoke(IPC_CHANNELS.nutSetupPrepareLocalDriver, payload),
+    prepareUsbHid: (
+      payload: NutSetupPrepareUsbHidPayload,
+    ): Promise<NutSetupPrepareUsbHidResult> =>
+      ipcRenderer.invoke(IPC_CHANNELS.nutSetupPrepareUsbHid, payload),
   },
   nut: {
-    getState: (): Promise<{ state: import('./main/ipc/ipcEvents').ConnectionState, staticData: Record<string, string> | null }> =>
-      ipcRenderer.invoke(IPC_CHANNELS.nutGetState),
+    getState: (): Promise<{
+      state: import('./main/ipc/ipcEvents').ConnectionState;
+      staticData: Record<string, string> | null;
+      localDriverLaunchIssue: LocalDriverLaunchIssue | null;
+    }> => ipcRenderer.invoke(IPC_CHANNELS.nutGetState),
+    retryLocalDriverLaunch: (): Promise<NutRetryLocalDriverLaunchResult> =>
+      ipcRenderer.invoke(IPC_CHANNELS.nutRetryLocalDriverLaunch),
   },
   criticalAlert: {
     test: (): Promise<void> =>
       ipcRenderer.invoke(IPC_CHANNELS.criticalAlertTest),
+  },
+  system: {
+    openExternal: (payload: SystemOpenExternalPayload): Promise<void> =>
+      ipcRenderer.invoke(IPC_CHANNELS.systemOpenExternal, payload),
   },
   events: {
     onConnectionStateChanged: (
@@ -102,6 +120,12 @@ const electronApi = {
       ) => void,
     ): (() => void) =>
       subscribeToMainEvent(IPC_EVENTS.themeSystemChanged, listener),
+    onLocalDriverLaunchIssueChanged: (
+      listener: (
+        payload: MainToRendererEventPayloads[typeof IPC_EVENTS.localDriverLaunchIssueChanged],
+      ) => void,
+    ): (() => void) =>
+      subscribeToMainEvent(IPC_EVENTS.localDriverLaunchIssueChanged, listener),
   },
 };
 
