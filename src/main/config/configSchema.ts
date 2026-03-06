@@ -79,6 +79,7 @@ const debugConfigSchema = z
 const startupConfigSchema = z
   .object({
     startWithWindows: z.boolean(),
+    startHiddenToTray: z.boolean(),
   })
   .strict();
 
@@ -198,6 +199,7 @@ export const defaultAppConfig: AppConfig = {
   },
   startup: {
     startWithWindows: false,
+    startHiddenToTray: false,
   },
   theme: {
     mode: 'system',

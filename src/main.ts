@@ -2,6 +2,7 @@ import { app, BrowserWindow, dialog, shell } from 'electron';
 import fs from 'node:fs';
 import path from 'node:path';
 import { bootstrapMainProcess } from './main/bootstrap/appBootstrap';
+import { configStore } from './main/config/configStore';
 
 // Set app identity early so Windows toast notifications and taskbar show the correct name.
 app.name = 'Easy UPS Client';
@@ -92,6 +93,19 @@ const createWindow = () => {
   // mainWindow.webContents.openDevTools();
 };
 
+function shouldStartHiddenToTrayOnLaunch(): boolean {
+  if (process.platform !== 'win32') {
+    return false;
+  }
+
+  const config = configStore.get();
+  if (!config.startup.startHiddenToTray) {
+    return false;
+  }
+
+  return app.getLoginItemSettings().wasOpenedAtLogin;
+}
+
 
 app.on('ready', async () => {
   try {
@@ -106,7 +120,9 @@ app.on('ready', async () => {
     return;
   }
 
-  createWindow();
+  if (!shouldStartHiddenToTrayOnLaunch()) {
+    createWindow();
+  }
 });
 
 app.on('before-quit', () => {

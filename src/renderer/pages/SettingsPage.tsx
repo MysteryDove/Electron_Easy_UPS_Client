@@ -37,6 +37,7 @@ type SettingsDraft = {
     lineAlertCooldown: number;
     locale: string;
     startWithWindows: boolean;
+    startHiddenToTray: boolean;
 };
 
 export function SettingsPage() {
@@ -77,6 +78,7 @@ export function SettingsPage() {
     const [lineAlertCooldown, setLineAlertCooldown] = useState(5);
     const [locale, setLocale] = useState('system');
     const [startWithWindows, setStartWithWindows] = useState(false);
+    const [startHiddenToTray, setStartHiddenToTray] = useState(false);
 
     // Sync from config on load
     useEffect(() => {
@@ -107,6 +109,7 @@ export function SettingsPage() {
         setLineAlertCooldown(config.line.alertCooldownMinutes);
         setLocale(config.i18n.locale);
         setStartWithWindows(config.startup.startWithWindows);
+        setStartHiddenToTray(config.startup.startHiddenToTray);
     }, [config]);
 
     useEffect(() => {
@@ -146,6 +149,7 @@ export function SettingsPage() {
             lineAlertCooldown,
             locale,
             startWithWindows,
+            startHiddenToTray,
             ...overrides,
         }),
         [
@@ -175,6 +179,7 @@ export function SettingsPage() {
             lineAlertCooldown,
             locale,
             startWithWindows,
+            startHiddenToTray,
         ],
     );
 
@@ -228,7 +233,10 @@ export function SettingsPage() {
                         alertCooldownMinutes: draft.lineAlertCooldown,
                     },
                     i18n: { locale: draft.locale },
-                    startup: { startWithWindows: draft.startWithWindows },
+                    startup: {
+                        startWithWindows: draft.startWithWindows,
+                        startHiddenToTray: draft.startHiddenToTray,
+                    },
                 });
 
                 await refreshConfig();
@@ -621,6 +629,19 @@ export function SettingsPage() {
                             />
                             <span className="form-toggle-label">{t('settings.startWithWindows')}</span>
                         </label>
+                        <label className="form-toggle">
+                            <UiCheckbox
+                                checked={startHiddenToTray}
+                                disabled={!startWithWindows}
+                                onChange={(e) => {
+                                    const checked = e.target.checked;
+                                    setStartHiddenToTray(checked);
+                                    void persistSettings({ startHiddenToTray: checked });
+                                }}
+                            />
+                            <span className="form-toggle-label">{t('settings.startHiddenToTray')}</span>
+                        </label>
+                        <p className="form-hint">{t('settings.startHiddenToTrayHint')}</p>
                     </div>
                 </section>
 

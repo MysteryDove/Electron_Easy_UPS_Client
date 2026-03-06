@@ -11,6 +11,7 @@ import {
 
 const RESET_SETTINGS_ON_START_ENV = 'ELECTRON_UPS_RESET_SETTINGS_ON_START';
 const DEBUG_LEVEL_ON_START_ENV = 'ELECTRON_UPS_DEBUG_LEVEL_ON_START';
+const LOCALE_ON_START_ENV = 'ELECTRON_UPS_LOCALE_ON_START';
 
 type ConfigStoreData = {
   settings: AppConfig;
@@ -74,7 +75,9 @@ function shouldResetSettingsOnStart(): boolean {
 
 function applyStartupOverrides(baseConfig: AppConfig): AppConfig {
   const debugLevel = parseDebugLevelOnStart();
-  if (!debugLevel) {
+  const locale = parseLocaleOnStart();
+
+  if (!debugLevel && !locale) {
     return baseConfig;
   }
 
@@ -82,7 +85,11 @@ function applyStartupOverrides(baseConfig: AppConfig): AppConfig {
     ...baseConfig,
     debug: {
       ...baseConfig.debug,
-      level: debugLevel,
+      level: debugLevel ?? baseConfig.debug.level,
+    },
+    i18n: {
+      ...baseConfig.i18n,
+      locale: locale ?? baseConfig.i18n.locale,
     },
   };
 }
@@ -107,6 +114,23 @@ function parseDebugLevelOnStart(): DebugLogLevel | null {
 
   console.warn(
     `[ConfigStore] Ignoring invalid ${DEBUG_LEVEL_ON_START_ENV} value: ${rawValue}`,
+  );
+  return null;
+}
+
+function parseLocaleOnStart(): AppConfig['i18n']['locale'] | null {
+  const rawValue = process.env[LOCALE_ON_START_ENV];
+  if (!rawValue) {
+    return null;
+  }
+
+  const normalized = rawValue.trim().toLowerCase();
+  if (normalized === 'en' || normalized === 'zh' || normalized === 'system') {
+    return normalized;
+  }
+
+  console.warn(
+    `[ConfigStore] Ignoring invalid ${LOCALE_ON_START_ENV} value: ${rawValue}`,
   );
   return null;
 }

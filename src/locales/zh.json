@@ -237,6 +237,8 @@
         "shutdownOverlay": "启用全屏关机提示",
         "startup": "启动",
         "startWithWindows": "随 Windows 启动",
+        "startHiddenToTray": "启动时隐藏到托盘",
+        "startHiddenToTrayHint": "仅在随 Windows 启动时生效",
         "appearance": "外观",
         "theme": "主题",
         "saving": "保存中...",

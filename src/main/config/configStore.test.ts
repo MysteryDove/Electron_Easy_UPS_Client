@@ -69,4 +69,13 @@ describe('ConfigStore', () => {
       }),
     );
   });
+
+  it('applies locale override from startup env', async () => {
+    vi.stubEnv('ELECTRON_UPS_LOCALE_ON_START', 'en');
+
+    const { ConfigStore } = await import('./configStore');
+    const store = new ConfigStore();
+
+    expect(store.get().i18n.locale).toBe('en');
+  });
 });
