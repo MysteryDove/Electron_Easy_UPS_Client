@@ -44,6 +44,9 @@ export const wizardCompletePayloadSchema = z
       })
       .strict()
       .optional(),
+    setupMode: z
+      .enum(['directNut', 'snmpSetup', 'serialSetup', 'usbHidSetup'])
+      .optional(),
     launchLocalComponents: z.boolean().optional(),
     localNutFolderPath: nonEmptyString.optional(),
   })

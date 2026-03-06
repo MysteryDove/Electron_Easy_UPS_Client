@@ -364,6 +364,7 @@ export function SetupWizardPage() {
         upsName,
         mapping: cleanMapping,
         line: { nominalVoltage, nominalFrequency },
+        setupMode: mode,
         launchLocalComponents: mode !== 'directNut',
         localNutFolderPath:
           mode !== 'directNut' ? nutFolderPath : undefined,

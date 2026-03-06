@@ -33,6 +33,7 @@ describe('shared IPC schemas', () => {
       host: '127.0.0.1',
       port: 3493,
       upsName: 'ups',
+      setupMode: 'usbHidSetup',
       launchLocalComponents: true,
       localNutFolderPath: 'C:/nut',
       line: {
@@ -42,6 +43,7 @@ describe('shared IPC schemas', () => {
     });
 
     expect(payload.launchLocalComponents).toBe(true);
+    expect(payload.setupMode).toBe('usbHidSetup');
     expect(payload.line?.nominalVoltage).toBe(230);
   });
 });

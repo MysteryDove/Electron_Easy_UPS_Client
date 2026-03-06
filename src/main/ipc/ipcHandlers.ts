@@ -389,6 +389,15 @@ async function handleWizardComplete(
   deps: IpcHandlerDependencies,
 ): Promise<ReturnType<ConfigStore['get']>> {
   const previousConfig = deps.configStore.get();
+  const usbHidBatteryDefaults =
+    payload.setupMode === 'usbHidSetup'
+      ? {
+          warningToastEnabled: false,
+          shutdownEnabled: false,
+          criticalAlertEnabled: false,
+          criticalShutdownAlertEnabled: false,
+        }
+      : undefined;
 
   const updatedConfig = deps.configStore.update({
     nut: {
@@ -401,6 +410,7 @@ async function handleWizardComplete(
       launchLocalComponents: payload.launchLocalComponents,
       localNutFolderPath: payload.localNutFolderPath,
     },
+    battery: usbHidBatteryDefaults,
     wizard: { completed: true },
     line: payload.line,
   });

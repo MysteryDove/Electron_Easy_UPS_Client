@@ -84,6 +84,12 @@ export type WizardTestConnectionResult = {
   variables?: Record<string, string>;
 };
 
+export type WizardSetupMode =
+  | 'directNut'
+  | 'snmpSetup'
+  | 'serialSetup'
+  | 'usbHidSetup';
+
 export type WizardCompletePayload = {
   host: string;
   port: number;
@@ -92,6 +98,7 @@ export type WizardCompletePayload = {
   upsName: string;
   mapping?: Record<string, string>;
   line?: { nominalVoltage: number; nominalFrequency: number };
+  setupMode?: WizardSetupMode;
   launchLocalComponents?: boolean;
   localNutFolderPath?: string;
 };
