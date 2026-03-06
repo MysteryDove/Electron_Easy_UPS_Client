@@ -50,6 +50,7 @@ export function SettingsPage() {
         text: string;
     } | null>(null);
     const saveMessageTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+    const [enteringWizard, setEnteringWizard] = useState(false);
 
     // Local form state (mirrors config)
     const [host, setHost] = useState('');
@@ -257,6 +258,26 @@ export function SettingsPage() {
         [buildDraft, refreshConfig, t],
     );
 
+    const handleEnterWizard = useCallback(async () => {
+        setEnteringWizard(true);
+
+        try {
+            await electronApi.wizard.enter();
+            navigate('/wizard');
+        } catch (err) {
+            setSaveMessage({
+                type: 'error',
+                text: err instanceof Error
+                    ? err.message
+                    : t(
+                        'wizard.enterFailed',
+                        'Failed to stop active NUT services before opening the setup wizard.',
+                    ),
+            });
+            setEnteringWizard(false);
+        }
+    }, [navigate, t]);
+
     if (!config) {
         return (
             <div className="page-loading">
@@ -283,7 +304,10 @@ export function SettingsPage() {
                         <UiButton
                             type="button"
                             className="btn btn--secondary"
-                            onClick={() => navigate('/wizard')}
+                            onClick={() => {
+                                void handleEnterWizard();
+                            }}
+                            disabled={enteringWizard}
                         >
                             <Plug size={18} style={{ marginRight: '8px', display: 'inline-block', verticalAlign: 'middle' }} />
                             <span style={{ display: 'inline-block', verticalAlign: 'middle' }}>{t('settings.reconfigureConnection', 'Reconfigure connection...')}</span>

@@ -150,6 +150,10 @@ export function registerIpcHandlers(dependencies: IpcHandlerDependencies): void 
       handleWizardTestConnection(normalizeWizardTestPayload(payload)),
   );
 
+  ipcMain.handle(IPC_CHANNELS.wizardEnter, async () => {
+    await handleWizardEnter(dependencies);
+  });
+
   ipcMain.handle(
     IPC_CHANNELS.wizardComplete,
     async (_event, payload: unknown) =>
@@ -355,6 +359,21 @@ async function handleWizardTestConnection(
   }
 }
 
+async function handleWizardEnter(deps: IpcHandlerDependencies): Promise<void> {
+  const [wizardStopResult, pollingStopResult] = await Promise.allSettled([
+    deps.wizardProvisioningService.stop(),
+    deps.nutPollingService.stop(),
+  ]);
+
+  if (wizardStopResult.status === 'rejected') {
+    throw wizardStopResult.reason;
+  }
+
+  if (pollingStopResult.status === 'rejected') {
+    throw pollingStopResult.reason;
+  }
+}
+
 function normalizeWizardTestPayload(
   payload: unknown,
 ): WizardTestConnectionPayload {
@@ -391,6 +410,8 @@ async function handleWizardComplete(
     updatedConfig,
     { stopWizardProvisioning: true },
   );
+
+  deps.nutPollingService.start();
 
   return updatedConfig;
 }

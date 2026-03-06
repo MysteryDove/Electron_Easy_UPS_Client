@@ -7,6 +7,7 @@ export type { TelemetryColumn } from '../telemetry/types';
 export const IPC_CHANNELS = {
   settingsGet: 'settings:get',
   settingsUpdate: 'settings:update',
+  wizardEnter: 'wizard:enter',
   telemetryGetAvailableColumns: 'telemetry:get-available-columns',
   telemetryGetLatest: 'telemetry:get-latest',
   telemetryQueryRange: 'telemetry:query-range',
@@ -261,6 +262,10 @@ export type RendererInvokeMap = {
   [IPC_CHANNELS.settingsUpdate]: {
     request: AppConfigPatch;
     response: AppConfig;
+  };
+  [IPC_CHANNELS.wizardEnter]: {
+    request: void;
+    response: void;
   };
   [IPC_CHANNELS.telemetryGetAvailableColumns]: {
     request: void;

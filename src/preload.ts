@@ -46,6 +46,7 @@ const electronApi = {
       ipcRenderer.invoke(IPC_CHANNELS.telemetryGetMinMaxForRange, payload),
   },
   wizard: {
+    enter: (): Promise<void> => ipcRenderer.invoke(IPC_CHANNELS.wizardEnter),
     testConnection: (
       payload: WizardTestConnectionPayload,
     ): Promise<WizardTestConnectionResult> =>

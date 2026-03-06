@@ -17,6 +17,7 @@ export function ReconnectOverlay() {
     const [rescanMessage, setRescanMessage] = useState<string | null>(null);
     const [canContinue, setCanContinue] = useState(false);
     const [continuing, setContinuing] = useState(false);
+    const [enteringWizard, setEnteringWizard] = useState(false);
     const targetComPort = localDriverLaunchIssue?.port?.trim().toUpperCase() ?? '';
     const requiresPortRescan = localDriverLaunchIssue
         ? shouldRequireSerialPortRescan(localDriverLaunchIssue)
@@ -195,6 +196,25 @@ export function ReconnectOverlay() {
         }
     };
 
+    const handleEnterWizard = async () => {
+        setEnteringWizard(true);
+
+        try {
+            await electronApi.wizard.enter();
+            navigate('/wizard');
+        } catch (err) {
+            setRetryFailure(
+                err instanceof Error
+                    ? err.message
+                    : t(
+                        'wizard.enterFailed',
+                        'Failed to stop active NUT services before opening the setup wizard.',
+                    ),
+            );
+            setEnteringWizard(false);
+        }
+    };
+
     const handleContinue = async () => {
         if (!canContinue || continuing) {
             return;
@@ -307,7 +327,10 @@ export function ReconnectOverlay() {
                                 <UiButton
                                     type="button"
                                     className="btn btn--secondary"
-                                    onClick={() => navigate('/wizard')}
+                                    onClick={() => {
+                                        void handleEnterWizard();
+                                    }}
+                                    disabled={enteringWizard}
                                 >
                                     {t('reconnect.driverLogReconfigure', 'Re-configure')}
                                 </UiButton>

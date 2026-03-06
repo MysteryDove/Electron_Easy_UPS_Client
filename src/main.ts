@@ -65,6 +65,12 @@ const createWindow = () => {
       return;
     }
 
+    if (isWizardRoute(mainWindow)) {
+      isQuitting = true;
+      app.quit();
+      return;
+    }
+
     event.preventDefault();
     mainWindow?.hide();
   });
@@ -144,6 +150,24 @@ function isHttpUrl(url: string): boolean {
   try {
     const parsed = new URL(url);
     return parsed.protocol === 'http:' || parsed.protocol === 'https:';
+  } catch {
+    return false;
+  }
+}
+
+function isWizardRoute(window: BrowserWindow | null): boolean {
+  if (!window || window.isDestroyed()) {
+    return false;
+  }
+
+  const currentUrl = window.webContents.getURL();
+  if (!currentUrl) {
+    return false;
+  }
+
+  try {
+    const parsed = new URL(currentUrl);
+    return parsed.hash === '#/wizard' || parsed.hash.startsWith('#/wizard?');
   } catch {
     return false;
   }
