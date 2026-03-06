@@ -9,7 +9,7 @@ import {
 import type {
   NutSetupUsbHidExperimentalIssueCode,
   NutSetupValidateFolderResult,
-} from '../../../main/ipc/ipcChannels';
+} from '../../../shared/ipc/contracts';
 import type { InstallStatus, SetupMode } from './types';
 import { WizardSteps } from './WizardSteps';
 import { SnmpSetupForm, type SnmpSetupFormProps } from './SnmpSetupForm';

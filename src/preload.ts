@@ -1,33 +1,33 @@
 import { contextBridge, ipcRenderer, type IpcRendererEvent } from 'electron';
-import type { AppConfig, AppConfigPatch } from './main/config/configSchema';
-import type {
-  QueryRangePayload,
-  TelemetryDataPoint,
-} from './main/db/telemetryRepository';
-import type { TelemetryColumn } from './main/nut/nutValueMapper';
+import type { AppConfig, AppConfigPatch } from './shared/config/types';
+import type { TelemetryColumn } from './shared/telemetry/types';
 import {
   IPC_CHANNELS,
   IPC_EVENTS,
-  type WizardTestConnectionPayload,
-  type WizardTestConnectionResult,
-  type WizardCompletePayload,
+  type MainToRendererEventPayloads,
+  type NutRetryLocalDriverLaunchResult,
   type NutSetupChooseFolderResult,
   type NutSetupListComPortsResult,
   type NutSetupListSerialDriversPayload,
   type NutSetupListSerialDriversResult,
   type NutSetupPrepareLocalDriverPayload,
   type NutSetupPrepareLocalDriverResult,
+  type NutSetupPrepareLocalNutPayload,
+  type NutSetupPrepareLocalNutResult,
   type NutSetupPrepareUsbHidPayload,
   type NutSetupPrepareUsbHidResult,
   type NutSetupValidateFolderPayload,
   type NutSetupValidateFolderResult,
-  type NutSetupPrepareLocalNutPayload,
-  type NutSetupPrepareLocalNutResult,
-  type LocalDriverLaunchIssue,
-  type NutRetryLocalDriverLaunchResult,
+  type NutStateSnapshot,
+  type QueryRangePayload,
   type SystemOpenExternalPayload,
-} from './main/ipc/ipcChannels';
-import type { MainToRendererEventPayloads } from './main/ipc/ipcEvents';
+  type TelemetryDataPoint,
+  type TelemetryMinMaxRangePayload,
+  type TelemetryRangeLimits,
+  type WizardTestConnectionPayload,
+  type WizardTestConnectionResult,
+  type WizardCompletePayload,
+} from './shared/ipc/contracts';
 
 const electronApi = {
   settings: {
@@ -42,7 +42,7 @@ const electronApi = {
       ipcRenderer.invoke(IPC_CHANNELS.telemetryGetLatest),
     queryRange: (payload: QueryRangePayload): Promise<TelemetryDataPoint[]> =>
       ipcRenderer.invoke(IPC_CHANNELS.telemetryQueryRange, payload),
-    getMinMaxForRange: (payload: { startIso: string; endIso: string }): Promise<Record<string, { min: number | null; max: number | null }>> =>
+    getMinMaxForRange: (payload: TelemetryMinMaxRangePayload): Promise<TelemetryRangeLimits> =>
       ipcRenderer.invoke(IPC_CHANNELS.telemetryGetMinMaxForRange, payload),
   },
   wizard: {
@@ -80,11 +80,8 @@ const electronApi = {
       ipcRenderer.invoke(IPC_CHANNELS.nutSetupPrepareUsbHid, payload),
   },
   nut: {
-    getState: (): Promise<{
-      state: import('./main/ipc/ipcEvents').ConnectionState;
-      staticData: Record<string, string> | null;
-      localDriverLaunchIssue: LocalDriverLaunchIssue | null;
-    }> => ipcRenderer.invoke(IPC_CHANNELS.nutGetState),
+    getState: (): Promise<NutStateSnapshot> =>
+      ipcRenderer.invoke(IPC_CHANNELS.nutGetState),
     retryLocalDriverLaunch: (): Promise<NutRetryLocalDriverLaunchResult> =>
       ipcRenderer.invoke(IPC_CHANNELS.nutRetryLocalDriverLaunch),
   },
@@ -108,6 +105,11 @@ const electronApi = {
         payload: MainToRendererEventPayloads[typeof IPC_EVENTS.upsStaticData],
       ) => void,
     ): (() => void) => subscribeToMainEvent(IPC_EVENTS.upsStaticData, listener),
+    onUpsDynamicData: (
+      listener: (
+        payload: MainToRendererEventPayloads[typeof IPC_EVENTS.upsDynamicData],
+      ) => void,
+    ): (() => void) => subscribeToMainEvent(IPC_EVENTS.upsDynamicData, listener),
     onUpsTelemetryUpdated: (
       listener: (
         payload: MainToRendererEventPayloads[typeof IPC_EVENTS.upsTelemetryUpdated],

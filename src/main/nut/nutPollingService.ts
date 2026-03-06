@@ -15,6 +15,7 @@ import type {
 } from '../db/telemetryRepository';
 import { IPC_EVENTS, type LocalDriverLaunchIssue } from '../ipc/ipcChannels';
 import type { ConnectionState } from '../ipc/ipcEvents';
+import { hasNoMatchingUsbHidUpsSignal } from '../../shared/wizard/usbHidErrors';
 import { discoverNutCapabilities } from './nutCapabilityDiscovery';
 import { NutClient } from './nutClient';
 
@@ -74,6 +75,7 @@ export class NutPollingService {
   private readonly nutClient: NutClient;
   private readonly telemetryUpdatedListeners = new Set<NutTelemetryUpdatedListener>();
   private readonly connectionStateListeners = new Set<(state: ConnectionState) => void>();
+  private currentConfig: AppConfig;
   private debugLogLevel: DebugLogLevel;
   private state: ConnectionState = 'idle';
   private pollTimer: NodeJS.Timeout | null = null;
@@ -81,8 +83,12 @@ export class NutPollingService {
   private reconnectAttempt = 0;
   private started = false;
   private pollInFlight = false;
+  private lifecycleTask: Promise<void> = Promise.resolve();
   private localDriverProcess: ChildProcess | null = null;
   private localUpsdProcess: ChildProcess | null = null;
+  private localDriverExecutable: string | null = null;
+  private localDriverConfiguredPort: string | null = null;
+  private localDriverCommandLine: string | null = null;
   private readonly localProcessOutputCapture = new WeakMap<
     ChildProcess,
     LocalProcessOutputCapture
@@ -92,14 +98,15 @@ export class NutPollingService {
   private availableFields: Set<string> = new Set();
   private staticFields: Set<string> = new Set();
   private dynamicFields: Set<string> = new Set();
-  // Contains the latest full raw NUT snapshot (static + dynamic fields).
   private staticSnapshot: Record<string, string> = {};
+  private dynamicSnapshot: Record<string, string> = {};
 
   public constructor(configStore: ConfigStore, telemetryRepository: TelemetryRepository) {
     this.configStore = configStore;
     this.telemetryRepository = telemetryRepository;
     this.nutClient = new NutClient();
-    this.debugLogLevel = this.configStore.get().debug.level;
+    this.currentConfig = this.configStore.get();
+    this.debugLogLevel = this.currentConfig.debug.level;
   }
 
   public start(): void {
@@ -108,17 +115,19 @@ export class NutPollingService {
     }
 
     this.started = true;
-    void this.connectAndInitialize();
+    void this.enqueueLifecycle(() => this.connectAndInitialize());
   }
 
   public async stop(): Promise<void> {
     this.started = false;
-    this.requiresManualDriverRetry = false;
-    this.clearPollTimer();
-    this.clearReconnectTimer();
-    await this.nutClient.close();
-    await this.stopLocalNutProcesses({ forceManagedChildren: true });
-    this.setState('idle');
+    await this.enqueueLifecycle(async () => {
+      this.requiresManualDriverRetry = false;
+      this.clearPollTimer();
+      this.clearReconnectTimer();
+      await this.nutClient.close();
+      await this.stopLocalNutProcesses({ forceManagedChildren: true });
+      this.setState('idle');
+    });
   }
 
   public async startLocalComponentsForWizard(
@@ -135,7 +144,7 @@ export class NutPollingService {
       throw new Error('upsName is required');
     }
 
-    const baseConfig = this.configStore.get();
+    const baseConfig = this.currentConfig;
     const wizardLocalConfig: AppConfig = {
       ...baseConfig,
       nut: {
@@ -157,6 +166,10 @@ export class NutPollingService {
     return this.staticSnapshot;
   }
 
+  public getDynamicSnapshot(): Record<string, string> {
+    return this.dynamicSnapshot;
+  }
+
   public getLocalDriverLaunchIssue(): LocalDriverLaunchIssue | null {
     return this.localDriverLaunchIssue;
   }
@@ -172,16 +185,18 @@ export class NutPollingService {
       };
     }
 
-    this.requiresManualDriverRetry = false;
-    this.clearPollTimer();
-    this.clearReconnectTimer();
-    await this.nutClient.close().catch(() => {
-      // Ignore close errors during retry flow.
+    await this.enqueueLifecycle(async () => {
+      this.requiresManualDriverRetry = false;
+      this.clearPollTimer();
+      this.clearReconnectTimer();
+      await this.nutClient.close().catch(() => {
+        // Ignore close errors during retry flow.
+      });
+      await this.stopLocalNutProcesses({ forceManagedChildren: true });
+      this.reconnectAttempt = 0;
+      this.setState('reconnecting');
+      await this.connectAndInitialize();
     });
-    await this.stopLocalNutProcesses({ forceManagedChildren: true });
-    this.reconnectAttempt = 0;
-    this.setState('reconnecting');
-    await this.connectAndInitialize();
 
     if (this.state === 'ready') {
       return { success: true };
@@ -215,34 +230,38 @@ export class NutPollingService {
     previousConfig: AppConfig,
     nextConfig: AppConfig,
   ): Promise<void> {
+    this.currentConfig = nextConfig;
     this.debugLogLevel = nextConfig.debug.level;
 
-    if (!previousConfig.wizard.completed && nextConfig.wizard.completed) {
-      if (!this.started) {
-        this.start();
+    await this.enqueueLifecycle(async () => {
+      if (!previousConfig.wizard.completed && nextConfig.wizard.completed) {
+        if (!this.started) {
+          this.started = true;
+        }
+        await this.connectAndInitialize();
+        return;
       }
-      return;
-    }
 
-    if (!this.started) {
-      return;
-    }
+      if (!this.started) {
+        return;
+      }
 
-    const reconnectRequired = hasNutConnectionConfigChanged(
-      previousConfig,
-      nextConfig,
-    );
-    const pollingIntervalChanged =
-      previousConfig.polling.intervalMs !== nextConfig.polling.intervalMs;
+      const reconnectRequired = hasNutConnectionConfigChanged(
+        previousConfig,
+        nextConfig,
+      );
+      const pollingIntervalChanged =
+        previousConfig.polling.intervalMs !== nextConfig.polling.intervalMs;
 
-    if (reconnectRequired) {
-      await this.reconnectNow();
-      return;
-    }
+      if (reconnectRequired) {
+        await this.reconnectNow();
+        return;
+      }
 
-    if (pollingIntervalChanged && this.state === 'ready') {
-      this.startPollingTimer(nextConfig.polling.intervalMs);
-    }
+      if (pollingIntervalChanged && this.state === 'ready') {
+        this.startPollingTimer(nextConfig.polling.intervalMs);
+      }
+    });
   }
 
   private async reconnectNow(): Promise<void> {
@@ -253,7 +272,7 @@ export class NutPollingService {
     await this.nutClient.close();
     this.reconnectAttempt = 0;
     this.setState('reconnecting');
-    void this.connectAndInitialize();
+    await this.connectAndInitialize();
   }
 
   private async connectAndInitialize(): Promise<void> {
@@ -262,7 +281,7 @@ export class NutPollingService {
     }
 
     try {
-      const config = this.configStore.get();
+      const config = this.currentConfig;
       this.debugLogLevel = config.debug.level;
       this.setState('connecting');
       await this.startLocalNutProcessesIfNeeded(config);
@@ -284,10 +303,8 @@ export class NutPollingService {
       this.availableFields = discoveryResult.availableFields;
       this.staticFields = discoveryResult.staticFields;
       this.dynamicFields = discoveryResult.dynamicFields;
-      this.staticSnapshot = {
-        ...discoveryResult.staticSnapshot,
-        ...discoveryResult.initialDynamicSnapshot,
-      };
+      this.staticSnapshot = discoveryResult.staticSnapshot;
+      this.dynamicSnapshot = discoveryResult.initialDynamicSnapshot;
       this.log('debug', 'Capability discovery completed', {
         availableFieldCount: this.availableFields.size,
         staticFieldCount: this.staticFields.size,
@@ -299,17 +316,27 @@ export class NutPollingService {
           await this.waitForDriverStateQuiet(config.nut.upsName);
         } catch (error) {
           const technicalDetails = summarizeUnknownError(error);
-          this.setLocalDriverLaunchIssue({
-            code: 'SERIAL_DRIVER_LAUNCH_FAILED',
-            summary: `Driver initialization did not reach driver.state=${DRIVER_STATE_READY_VALUE}.`,
-            occurredAt: new Date().toISOString(),
-            signature: `SERIAL_DRIVER_LAUNCH_FAILED:driver-state:${config.nut.upsName}`,
-            technicalDetails: truncateTechnicalDetails(technicalDetails),
-          });
+          const capturedOutput = this.localDriverProcess
+            ? this.getCapturedProcessOutput(this.localDriverProcess)
+            : { stdout: '', stderr: '' };
+          this.setLocalDriverLaunchIssue(
+            classifyLocalDriverLaunchIssue({
+              driverExecutable: this.localDriverExecutable,
+              configuredPort: this.localDriverConfiguredPort,
+              commandLine: this.localDriverCommandLine ?? undefined,
+              capturedOutput,
+              technicalDetails,
+              genericFailureSummary:
+                isUsbHidDriverExecutable(this.localDriverExecutable)
+                  ? 'USB HID driver initialization did not complete during startup.'
+                  : `Driver initialization did not reach driver.state=${DRIVER_STATE_READY_VALUE}.`,
+            }),
+          );
           throw error;
         }
       }
 
+      this.emitStaticSnapshot();
       this.emitCurrentNutSnapshot();
 
       this.logPolledSnapshot(
@@ -362,6 +389,12 @@ export class NutPollingService {
       folderPath,
       driverConfig.driverExecutable,
     );
+    const driverArgs = ['-a', config.nut.upsName];
+    const driverCommandLine = formatCommandLineForLog(driverPath, driverArgs);
+    const configuredComPort = normalizeComPortToken(driverConfig.port);
+    this.localDriverExecutable = driverExecutable;
+    this.localDriverConfiguredPort = configuredComPort;
+    this.localDriverCommandLine = driverCommandLine;
     const upsdPath = path.join(folderPath, 'sbin', 'upsd.exe');
     await assertFileExists(upsdPath, 'upsd.exe');
 
@@ -377,10 +410,6 @@ export class NutPollingService {
         pids: existingProcesses.driverPids,
       });
     } else {
-      const driverArgs = ['-a', config.nut.upsName];
-      const driverCommandLine = formatCommandLineForLog(driverPath, driverArgs);
-      const configuredComPort = normalizeComPortToken(driverConfig.port);
-
       if (configuredComPort) {
         const precheck = await detectComPortPresenceForLaunch(configuredComPort);
         if (precheck.exists === false) {
@@ -453,7 +482,7 @@ export class NutPollingService {
             captured,
           );
           this.setLocalDriverLaunchIssue(
-            classifyLocalDriverLaunchIssueFromEarlyExit({
+            classifyLocalDriverLaunchIssue({
               driverExecutable,
               configuredPort: configuredComPort,
               commandLine: driverCommandLine,
@@ -513,12 +542,15 @@ export class NutPollingService {
   ): Promise<void> {
     const shouldTerminate = Boolean(
       options?.forceManagedChildren ||
-      this.configStore.get().nut.launchLocalComponents,
+      this.currentConfig.nut.launchLocalComponents,
     );
     const upsd = this.localUpsdProcess;
     const driver = this.localDriverProcess;
     this.localUpsdProcess = null;
     this.localDriverProcess = null;
+    this.localDriverExecutable = null;
+    this.localDriverConfiguredPort = null;
+    this.localDriverCommandLine = null;
 
     if (!shouldTerminate) {
       this.log(
@@ -724,25 +756,20 @@ export class NutPollingService {
   }
 
   private async pollDynamicFields(): Promise<void> {
-    if (!this.started || this.pollInFlight || this.availableFields.size === 0) {
+    if (!this.started || this.pollInFlight || this.dynamicFields.size === 0) {
       return;
     }
 
     this.pollInFlight = true;
     try {
-      const config = this.configStore.get();
+      const config = this.currentConfig;
       this.debugLogLevel = config.debug.level;
-      const fullSnapshot = await this.nutClient.getVariables(config.nut.upsName, [
-        ...this.availableFields,
+      const dynamicSnapshot = await this.nutClient.getVariables(config.nut.upsName, [
+        ...this.dynamicFields,
       ]);
-      this.logPolledSnapshot(fullSnapshot);
-      this.updateCurrentNutSnapshot(fullSnapshot);
+      this.logPolledSnapshot(dynamicSnapshot);
+      this.updateCurrentNutSnapshot(dynamicSnapshot);
       this.emitCurrentNutSnapshot();
-
-      const dynamicSnapshot = pickSnapshotByFields(
-        fullSnapshot,
-        this.dynamicFields,
-      );
       await this.persistAndBroadcastTelemetry(dynamicSnapshot);
     } catch (error) {
       await this.handleConnectionFailure(error);
@@ -754,7 +781,7 @@ export class NutPollingService {
   private async persistAndBroadcastTelemetry(
     dynamicSnapshot: Record<string, string>,
   ): Promise<void> {
-    const config = this.configStore.get();
+    const config = this.currentConfig;
     const timestamp = new Date();
     const values = await this.telemetryRepository.insertFromNutSnapshot(
       timestamp,
@@ -816,7 +843,7 @@ export class NutPollingService {
     this.setState('reconnecting');
     this.reconnectTimer = setTimeout(() => {
       this.reconnectTimer = null;
-      void this.connectAndInitialize();
+      void this.enqueueLifecycle(() => this.connectAndInitialize());
     }, delayMs);
   }
 
@@ -868,13 +895,16 @@ export class NutPollingService {
   private updateCurrentNutSnapshot(
     dynamicSnapshot: Record<string, string>,
   ): void {
-    this.staticSnapshot = {
-      ...this.staticSnapshot,
-      ...dynamicSnapshot,
-    };
+    this.dynamicSnapshot = dynamicSnapshot;
   }
 
   private emitCurrentNutSnapshot(): void {
+    this.emitToRenderers(IPC_EVENTS.upsDynamicData, {
+      values: this.dynamicSnapshot,
+    });
+  }
+
+  private emitStaticSnapshot(): void {
     this.emitToRenderers(IPC_EVENTS.upsStaticData, {
       values: this.staticSnapshot,
       fields: {
@@ -883,6 +913,14 @@ export class NutPollingService {
         dynamic: [...this.dynamicFields],
       },
     });
+  }
+
+  private enqueueLifecycle(task: () => Promise<void>): Promise<void> {
+    const nextTask = this.lifecycleTask.then(task, task);
+    this.lifecycleTask = nextTask.catch(() => {
+      // Keep the lifecycle queue usable after failures.
+    });
+    return nextTask;
   }
 
   private emitToRenderers(channel: string, payload: unknown): void {
@@ -1213,13 +1251,15 @@ function formatLocalProcessEarlyExitError(
   return parts.join('\n');
 }
 
-function classifyLocalDriverLaunchIssueFromEarlyExit(options: {
-  driverExecutable: string;
+function classifyLocalDriverLaunchIssue(options: {
+  driverExecutable: string | null | undefined;
   configuredPort: string | null;
-  commandLine: string;
+  commandLine?: string;
   capturedOutput: { stdout: string; stderr: string };
   technicalDetails: string;
+  genericFailureSummary?: string;
 }): LocalDriverLaunchIssue {
+  const driverExecutable = options.driverExecutable ?? DEFAULT_LOCAL_DRIVER_EXECUTABLE;
   const combinedOutput = [
     options.capturedOutput.stdout,
     options.capturedOutput.stderr,
@@ -1227,6 +1267,28 @@ function classifyLocalDriverLaunchIssueFromEarlyExit(options: {
   ]
     .filter(Boolean)
     .join('\n');
+
+  if (isUsbHidDriverExecutable(driverExecutable)) {
+    const noMatchingUps = hasNoMatchingUsbHidUpsSignal(combinedOutput);
+    return {
+      code: noMatchingUps
+        ? 'USB_HID_UPS_NOT_FOUND'
+        : 'USB_HID_DRIVER_LAUNCH_FAILED',
+      summary: noMatchingUps
+        ? 'No matching USB HID UPS was found.'
+        : options.genericFailureSummary ?? 'USB HID driver launch failed during startup.',
+      occurredAt: new Date().toISOString(),
+      signature: noMatchingUps
+        ? `USB_HID_UPS_NOT_FOUND:${driverExecutable}`
+        : `USB_HID_DRIVER_LAUNCH_FAILED:${driverExecutable}`,
+      driverExecutable,
+      commandLine: options.commandLine,
+      stdout: options.capturedOutput.stdout || undefined,
+      stderr: options.capturedOutput.stderr || undefined,
+      technicalDetails: truncateTechnicalDetails(options.technicalDetails),
+    };
+  }
+
   const openFailure = detectComOpenFailure(combinedOutput);
 
   if (openFailure.matched) {
@@ -1237,8 +1299,8 @@ function classifyLocalDriverLaunchIssueFromEarlyExit(options: {
         ? `Driver failed to open ${resolvedPort}.`
         : 'Driver failed to open the configured COM port.',
       occurredAt: new Date().toISOString(),
-      signature: `SERIAL_COM_OPEN_FAILED:${resolvedPort ?? 'unknown'}:${options.driverExecutable}`,
-      driverExecutable: options.driverExecutable,
+      signature: `SERIAL_COM_OPEN_FAILED:${resolvedPort ?? 'unknown'}:${driverExecutable}`,
+      driverExecutable,
       port: resolvedPort,
       commandLine: options.commandLine,
       stdout: options.capturedOutput.stdout || undefined,
@@ -1249,16 +1311,22 @@ function classifyLocalDriverLaunchIssueFromEarlyExit(options: {
 
   return {
     code: 'SERIAL_DRIVER_LAUNCH_FAILED',
-    summary: 'Driver launch failed during startup.',
+    summary: options.genericFailureSummary ?? 'Driver launch failed during startup.',
     occurredAt: new Date().toISOString(),
-    signature: `SERIAL_DRIVER_LAUNCH_FAILED:${options.driverExecutable}`,
-    driverExecutable: options.driverExecutable,
+    signature: `SERIAL_DRIVER_LAUNCH_FAILED:${driverExecutable}`,
+    driverExecutable,
     port: options.configuredPort ?? undefined,
     commandLine: options.commandLine,
     stdout: options.capturedOutput.stdout || undefined,
     stderr: options.capturedOutput.stderr || undefined,
     technicalDetails: truncateTechnicalDetails(options.technicalDetails),
   };
+}
+
+function isUsbHidDriverExecutable(
+  driverExecutable: string | null | undefined,
+): boolean {
+  return sanitizeDriverExecutable(driverExecutable ?? '') === 'usbhid-ups';
 }
 
 function detectComOpenFailure(text: string): {
@@ -1418,19 +1486,6 @@ function prettyJson(payload: unknown): string {
     );
 
   return JSON.stringify(sorted, null, 2);
-}
-
-function pickSnapshotByFields(
-  source: Record<string, string>,
-  fields: Set<string>,
-): Record<string, string> {
-  const snapshot: Record<string, string> = {};
-  for (const fieldName of fields) {
-    if (typeof source[fieldName] === 'string') {
-      snapshot[fieldName] = source[fieldName];
-    }
-  }
-  return snapshot;
 }
 
 function clampPollingIntervalMs(value: number): number {

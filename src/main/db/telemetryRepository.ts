@@ -4,20 +4,21 @@ import {
   TELEMETRY_COLUMNS,
   type TelemetryColumn,
 } from '../nut/nutValueMapper';
+import type {
+  QueryRangePayload,
+  TelemetryDataPoint,
+  TelemetryMinMaxRangePayload,
+  TelemetryRangeLimits,
+  TelemetryValues,
+} from '../../shared/ipc/contracts';
 
-export type TelemetryValues = Partial<Record<TelemetryColumn, number | null>>;
-
-export type TelemetryDataPoint = {
-  ts: string;
-  values: TelemetryValues;
-};
-
-export type QueryRangePayload = {
-  startIso: string;
-  endIso: string;
-  columns?: TelemetryColumn[];
-  maxPoints?: number;
-};
+export type {
+  QueryRangePayload,
+  TelemetryDataPoint,
+  TelemetryMinMaxRangePayload,
+  TelemetryRangeLimits,
+  TelemetryValues,
+} from '../../shared/ipc/contracts';
 
 type TelemetrySqlRow = {
   ts: Date | string;
@@ -96,24 +97,23 @@ export class TelemetryRepository {
   }
 
   public async getMinMaxForRange(
-    startIso: string,
-    endIso: string,
-  ): Promise<Record<string, { min: number | null; max: number | null }>> {
-    const start = new Date(startIso);
-    const end = new Date(endIso);
+    payload: TelemetryMinMaxRangePayload,
+  ): Promise<TelemetryRangeLimits> {
+    const start = new Date(payload.startIso);
+    const end = new Date(payload.endIso);
 
     if (Number.isNaN(start.getTime()) || Number.isNaN(end.getTime())) {
       throw new Error('Invalid query range timestamps');
     }
 
-    const columns = this.getAvailableColumns();
+    const columns = normalizeColumns(payload.columns);
     const selectParts = columns.map((col) => `MIN(${col}) as min_${col}, MAX(${col}) as max_${col}`);
     const sql = `SELECT ${selectParts.join(', ')} FROM ${UPS_TELEMETRY_TABLE} WHERE ts >= ? AND ts <= ?`;
 
     const rows = await this.db.all<Record<string, number | null>>(sql, [start, end]);
     const row = rows[0] || {};
 
-    const limits: Record<string, { min: number | null; max: number | null }> = {};
+    const limits: TelemetryRangeLimits = {};
     for (const col of columns) {
       const rawMin = row[`min_${col}`];
       const rawMax = row[`max_${col}`];
@@ -137,28 +137,20 @@ export class TelemetryRepository {
       throw new Error('Query range start must be before end');
     }
 
-    const columns =
-      payload.columns && payload.columns.length > 0
-        ? payload.columns.filter((column) => TELEMETRY_COLUMNS.includes(column))
-        : ([...TELEMETRY_COLUMNS] as TelemetryColumn[]);
+    const columns = normalizeColumns(payload.columns);
 
     if (columns.length === 0) {
       return [];
     }
 
+    const maxPoints = normalizeMaxPoints(payload.maxPoints);
+
     const rows = await this.db.all<TelemetrySqlRow>(
-      `
-      SELECT ts, ${columns.join(', ')}
-      FROM ${UPS_TELEMETRY_TABLE}
-      WHERE ts >= ? AND ts <= ?
-      ORDER BY ts ASC
-      `,
-      [start, end],
+      buildRangeQuery(columns),
+      [start, end, maxPoints, maxPoints, maxPoints],
     );
 
-    const maxPoints = normalizeMaxPoints(payload.maxPoints);
-    const sampledRows = sampleRows(rows, maxPoints);
-    return sampledRows.map((row) => mapSqlRowToTelemetryDataPoint(row, columns));
+    return rows.map((row) => mapSqlRowToTelemetryDataPoint(row, columns));
   }
 
   public async deleteOlderThan(cutoffDate: Date): Promise<number> {
@@ -241,22 +233,33 @@ function normalizeMaxPoints(maxPoints: number | undefined): number {
   return rounded;
 }
 
-function sampleRows<T>(rows: T[], maxPoints: number): T[] {
-  if (rows.length <= maxPoints) {
-    return rows;
+function normalizeColumns(columns: TelemetryColumn[] | undefined): TelemetryColumn[] {
+  if (!columns || columns.length === 0) {
+    return [...TELEMETRY_COLUMNS] as TelemetryColumn[];
   }
 
-  if (maxPoints <= 1) {
-    return [rows[rows.length - 1]];
-  }
+  return columns.filter((column) => TELEMETRY_COLUMNS.includes(column));
+}
 
-  const sampled: T[] = [];
-  const scale = (rows.length - 1) / (maxPoints - 1);
-
-  for (let i = 0; i < maxPoints; i += 1) {
-    const index = Math.round(i * scale);
-    sampled.push(rows[index]);
-  }
-
-  return sampled;
+function buildRangeQuery(columns: TelemetryColumn[]): string {
+  const selectedColumns = columns.join(', ');
+  return `
+    WITH filtered AS (
+      SELECT
+        ts,
+        ${selectedColumns},
+        ROW_NUMBER() OVER (ORDER BY ts ASC) AS row_num,
+        COUNT(*) OVER () AS total_rows
+      FROM ${UPS_TELEMETRY_TABLE}
+      WHERE ts >= ? AND ts <= ?
+    )
+    SELECT ts, ${selectedColumns}
+    FROM filtered
+    WHERE total_rows <= ?
+      OR row_num = 1
+      OR row_num = total_rows
+      OR MOD(row_num - 1, CAST(CEIL(total_rows::DOUBLE / ?) AS BIGINT)) = 0
+    ORDER BY ts ASC
+    LIMIT ?
+  `;
 }

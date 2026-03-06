@@ -1,10 +1,12 @@
 import { app } from 'electron';
+import { RuntimeConfigCoordinator } from './runtimeConfigCoordinator';
 import { configStore } from '../config/configStore';
 import { DuckDbClient } from '../db/duckdbClient';
 import { RetentionService } from '../db/retentionService';
 import { TelemetryRepository } from '../db/telemetryRepository';
 import { registerIpcHandlers } from '../ipc/ipcHandlers';
 import { NutPollingService } from '../nut/nutPollingService';
+import { WizardProvisioningService } from '../nut/wizardProvisioningService';
 import { BatterySafetyService } from '../system/batterySafetyService';
 import { CriticalAlertWindow } from '../system/criticalAlertWindow';
 import { LineAlertService } from '../system/lineAlertService';
@@ -16,10 +18,12 @@ export type MainProcessRuntime = {
   telemetryRepository: TelemetryRepository;
   retentionService: RetentionService;
   nutPollingService: NutPollingService;
+  wizardProvisioningService: WizardProvisioningService;
   trayService: TrayService;
   batterySafetyService: BatterySafetyService;
   criticalAlertWindow: CriticalAlertWindow;
   lineAlertService: LineAlertService;
+  runtimeConfigCoordinator: RuntimeConfigCoordinator;
 };
 
 let runtimePromise: Promise<MainProcessRuntime> | null = null;
@@ -42,18 +46,34 @@ async function initializeRuntime(): Promise<MainProcessRuntime> {
   await duckDbClient.initialize();
 
   const telemetryRepository = new TelemetryRepository(duckDbClient);
-  const retentionService = new RetentionService(telemetryRepository, () =>
-    configStore.get().data.retentionDays,
+  const retentionService = new RetentionService(
+    telemetryRepository,
+    initialConfig.data.retentionDays,
   );
   const trayService = new TrayService();
   const criticalAlertWindow = new CriticalAlertWindow();
-  const batterySafetyService = new BatterySafetyService(configStore, criticalAlertWindow);
-  const lineAlertService = new LineAlertService(configStore);
+  const batterySafetyService = new BatterySafetyService(
+    initialConfig,
+    criticalAlertWindow,
+  );
+  const lineAlertService = new LineAlertService(initialConfig);
   const latestTelemetryPoint = await telemetryRepository.getLatestTelemetryPoint();
   if (latestTelemetryPoint) {
     trayService.handleTelemetry(latestTelemetryPoint.values);
   }
   const nutPollingService = new NutPollingService(configStore, telemetryRepository);
+  const wizardProvisioningService = new WizardProvisioningService(
+    configStore,
+    telemetryRepository,
+  );
+  const runtimeConfigCoordinator = new RuntimeConfigCoordinator({
+    retentionService,
+    nutPollingService,
+    wizardProvisioningService,
+    trayService,
+    batterySafetyService,
+    lineAlertService,
+  });
   const unsubscribeTelemetryListener = nutPollingService.onTelemetryUpdated(
     ({ values }) => {
       trayService.handleTelemetry(values);
@@ -69,16 +89,15 @@ async function initializeRuntime(): Promise<MainProcessRuntime> {
 
   trayService.start(initialConfig);
   trayService.handleConnectionState(nutPollingService.getState());
+  runtimeConfigCoordinator.initialize(initialConfig);
 
   registerIpcHandlers({
     configStore,
     telemetryRepository,
-    retentionService,
     nutPollingService,
-    trayService,
-    batterySafetyService,
+    wizardProvisioningService,
+    runtimeConfigCoordinator,
     criticalAlertWindow,
-    lineAlertService,
   });
 
   retentionService.start();
@@ -108,8 +127,9 @@ async function initializeRuntime(): Promise<MainProcessRuntime> {
     retentionService.stop();
 
     void (async () => {
-      const [nutStopResult, duckDbCloseResult] = await Promise.allSettled([
+      const [nutStopResult, wizardStopResult, duckDbCloseResult] = await Promise.allSettled([
         nutPollingService.stop(),
+        wizardProvisioningService.stop(),
         duckDbClient.close(),
       ]);
 
@@ -127,6 +147,13 @@ async function initializeRuntime(): Promise<MainProcessRuntime> {
         );
       }
 
+      if (wizardStopResult.status === 'rejected') {
+        console.error(
+          '[MainProcessBootstrap] Failed to stop WizardProvisioningService during shutdown',
+          wizardStopResult.reason,
+        );
+      }
+
       shutdownCompleted = true;
       app.quit();
     })();
@@ -137,9 +164,11 @@ async function initializeRuntime(): Promise<MainProcessRuntime> {
     telemetryRepository,
     retentionService,
     nutPollingService,
+    wizardProvisioningService,
     trayService,
     batterySafetyService,
     criticalAlertWindow,
     lineAlertService,
+    runtimeConfigCoordinator,
   };
 }

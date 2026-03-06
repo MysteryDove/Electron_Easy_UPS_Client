@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { useTranslation } from 'react-i18next';
 import { useAppConfig } from '../app/providers';
+import { electronApi } from '../app/electronApi';
 import { Sun, Moon, Monitor, CheckCircle2, XCircle, Plug } from 'lucide-react';
 import { useNavigate } from 'react-router-dom';
 import { createPortal } from 'react-dom';
@@ -195,8 +196,7 @@ export function SettingsPage() {
                     return;
                 }
 
-                // eslint-disable-next-line @typescript-eslint/no-explicit-any
-                await (window as any).electronApi.settings.update({
+                await electronApi.settings.update({
                     nut: {
                         host: draft.host,
                         port: draft.port,

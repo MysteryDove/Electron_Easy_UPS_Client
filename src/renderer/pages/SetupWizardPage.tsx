@@ -13,7 +13,7 @@ import type {
   NutSetupPrepareUsbHidPayload,
   NutSetupPrepareUsbHidResult,
   NutSetupValidateFolderResult,
-} from '../../main/ipc/ipcChannels';
+} from '../../shared/ipc/contracts';
 import { ChooseSetupModeStep } from './setupWizard/ChooseSetupModeStep';
 import { NutSetupStep } from './setupWizard/NutSetupStep';
 import { WizardSteps } from './setupWizard/WizardSteps';

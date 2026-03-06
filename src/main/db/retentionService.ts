@@ -1,18 +1,16 @@
+import type { AppConfig } from '../config/configSchema';
 import type { TelemetryRepository } from './telemetryRepository';
 
 const DAY_MS = 24 * 60 * 60 * 1000;
 
 export class RetentionService {
   private readonly telemetryRepository: TelemetryRepository;
-  private readonly getRetentionDays: () => number;
+  private retentionDays: number;
   private timer: NodeJS.Timeout | null = null;
 
-  public constructor(
-    telemetryRepository: TelemetryRepository,
-    getRetentionDays: () => number,
-  ) {
+  public constructor(telemetryRepository: TelemetryRepository, retentionDays: number) {
     this.telemetryRepository = telemetryRepository;
-    this.getRetentionDays = getRetentionDays;
+    this.retentionDays = normalizeRetentionDays(retentionDays);
   }
 
   public start(): void {
@@ -36,9 +34,13 @@ export class RetentionService {
   }
 
   public async runOnce(): Promise<number> {
-    const retentionDays = normalizeRetentionDays(this.getRetentionDays());
+    const retentionDays = normalizeRetentionDays(this.retentionDays);
     const cutoffDate = new Date(Date.now() - retentionDays * DAY_MS);
     return this.telemetryRepository.deleteOlderThan(cutoffDate);
+  }
+
+  public handleConfigUpdated(config: AppConfig): void {
+    this.retentionDays = normalizeRetentionDays(config.data.retentionDays);
   }
 }
 

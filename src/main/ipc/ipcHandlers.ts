@@ -1,22 +1,19 @@
 import { ipcMain, nativeTheme, BrowserWindow, dialog, shell } from 'electron';
+import type { RuntimeConfigCoordinator } from '../bootstrap/runtimeConfigCoordinator';
 import type { ConfigStore } from '../config/configStore';
-import type { RetentionService } from '../db/retentionService';
 import type {
   QueryRangePayload,
+  TelemetryMinMaxRangePayload,
   TelemetryRepository,
 } from '../db/telemetryRepository';
 import { NutClient } from '../nut/nutClient';
 import type { NutPollingService } from '../nut/nutPollingService';
+import type { WizardProvisioningService } from '../nut/wizardProvisioningService';
 import {
   TELEMETRY_COLUMNS,
   type TelemetryColumn,
 } from '../nut/nutValueMapper';
-import type { BatterySafetyService } from '../system/batterySafetyService';
 import type { CriticalAlertWindow } from '../system/criticalAlertWindow';
-import type { LineAlertService } from '../system/lineAlertService';
-import { i18nService } from '../system/i18nService';
-import { applyStartWithWindowsSetting } from '../system/startupService';
-import type { TrayService } from '../system/trayService';
 import {
   listComPorts,
   listSerialDrivers,
@@ -50,18 +47,22 @@ import {
   type WizardTestConnectionResult,
   type WizardCompletePayload,
 } from './ipcChannels';
+import {
+  queryRangePayloadSchema,
+  telemetryMinMaxRangePayloadSchema,
+  wizardCompletePayloadSchema,
+  wizardTestConnectionPayloadSchema,
+} from '../../shared/ipc/schemas';
 
 let isRegistered = false;
 
 export type IpcHandlerDependencies = {
   configStore: ConfigStore;
   telemetryRepository: TelemetryRepository;
-  retentionService: RetentionService;
   nutPollingService: NutPollingService;
-  trayService: TrayService;
-  batterySafetyService: BatterySafetyService;
+  wizardProvisioningService: WizardProvisioningService;
+  runtimeConfigCoordinator: RuntimeConfigCoordinator;
   criticalAlertWindow: CriticalAlertWindow;
-  lineAlertService: LineAlertService;
 };
 
 export function registerIpcHandlers(dependencies: IpcHandlerDependencies): void {
@@ -69,11 +70,6 @@ export function registerIpcHandlers(dependencies: IpcHandlerDependencies): void 
     return;
   }
   isRegistered = true;
-
-  // Initialize nativeTheme from initial config
-  const initialConfig = dependencies.configStore.get();
-  nativeTheme.themeSource = initialConfig.theme?.mode ?? 'system';
-  applyStartWithWindowsSetting(initialConfig.startup.startWithWindows);
 
   nativeTheme.on('updated', () => {
     BrowserWindow.getAllWindows().forEach((win) => {
@@ -93,21 +89,11 @@ export function registerIpcHandlers(dependencies: IpcHandlerDependencies): void 
       const previousConfig = dependencies.configStore.get();
       const updatedConfig = dependencies.configStore.update(payload);
 
-      // Instantly apply theme to the Electron backend so it propagates to WebContents
-      if (updatedConfig.theme?.mode) {
-        nativeTheme.themeSource = updatedConfig.theme.mode;
-      }
-      applyStartWithWindowsSetting(updatedConfig.startup.startWithWindows);
-
-      await dependencies.nutPollingService.handleConfigUpdated(
+      await dependencies.runtimeConfigCoordinator.applyUpdatedConfig(
         previousConfig,
         updatedConfig,
+        { runRetention: true },
       );
-      await dependencies.retentionService.runOnce();
-      await i18nService.handleConfigUpdated(updatedConfig);
-      dependencies.trayService.handleConfigUpdated(updatedConfig);
-      dependencies.batterySafetyService.handleConfigUpdated(updatedConfig);
-      dependencies.lineAlertService.handleConfigUpdated(updatedConfig);
       return updatedConfig;
     },
   );
@@ -140,16 +126,16 @@ export function registerIpcHandlers(dependencies: IpcHandlerDependencies): void 
 
   ipcMain.handle(
     IPC_CHANNELS.telemetryGetMinMaxForRange,
-    async (_event, payload: { startIso: string; endIso: string }) =>
+    async (_event, payload: unknown) =>
       dependencies.telemetryRepository.getMinMaxForRange(
-        payload.startIso,
-        payload.endIso,
+        normalizeTelemetryMinMaxRangePayload(payload),
       ),
   );
 
   ipcMain.handle(IPC_CHANNELS.nutGetState, async () => ({
     state: dependencies.nutPollingService.getState(),
     staticData: dependencies.nutPollingService.getStaticSnapshot(),
+    dynamicData: dependencies.nutPollingService.getDynamicSnapshot(),
     localDriverLaunchIssue:
       dependencies.nutPollingService.getLocalDriverLaunchIssue(),
   }));
@@ -224,7 +210,7 @@ export function registerIpcHandlers(dependencies: IpcHandlerDependencies): void 
       }
 
       try {
-        await dependencies.nutPollingService.startLocalComponentsForWizard(
+        await dependencies.wizardProvisioningService.startLocalComponents(
           normalizedPayload.folderPath,
           normalizedPayload.upsName,
         );
@@ -272,7 +258,7 @@ export function registerIpcHandlers(dependencies: IpcHandlerDependencies): void 
       }
 
       try {
-        await dependencies.nutPollingService.startLocalComponentsForWizard(
+        await dependencies.wizardProvisioningService.startLocalComponents(
           normalizedPayload.folderPath,
           normalizedPayload.upsName,
         );
@@ -297,7 +283,7 @@ export function registerIpcHandlers(dependencies: IpcHandlerDependencies): void 
       }
 
       try {
-        await dependencies.nutPollingService.startLocalComponentsForWizard(
+        await dependencies.wizardProvisioningService.startLocalComponents(
           normalizedPayload.folderPath,
           normalizedPayload.upsName,
         );
@@ -372,39 +358,7 @@ async function handleWizardTestConnection(
 function normalizeWizardTestPayload(
   payload: unknown,
 ): WizardTestConnectionPayload {
-  if (typeof payload !== 'object' || payload === null) {
-    throw new Error('Wizard test-connection payload must be an object');
-  }
-
-  const candidate = payload as Record<string, unknown>;
-
-  if (typeof candidate.host !== 'string' || !candidate.host) {
-    throw new Error('host is required');
-  }
-
-  if (typeof candidate.port !== 'number') {
-    throw new Error('port is required');
-  }
-
-  if (typeof candidate.upsName !== 'string' || !candidate.upsName) {
-    throw new Error('upsName is required');
-  }
-
-  const result: WizardTestConnectionPayload = {
-    host: candidate.host,
-    port: candidate.port,
-    upsName: candidate.upsName,
-  };
-
-  if (typeof candidate.username === 'string' && candidate.username) {
-    result.username = candidate.username;
-  }
-
-  if (typeof candidate.password === 'string' && candidate.password) {
-    result.password = candidate.password;
-  }
-
-  return result;
+  return wizardTestConnectionPayloadSchema.parse(payload);
 }
 
 // ---------------------------------------------------------------------------
@@ -432,13 +386,11 @@ async function handleWizardComplete(
     line: payload.line,
   });
 
-  await deps.nutPollingService.handleConfigUpdated(
+  await deps.runtimeConfigCoordinator.applyUpdatedConfig(
     previousConfig,
     updatedConfig,
+    { stopWizardProvisioning: true },
   );
-  deps.trayService.handleConfigUpdated(updatedConfig);
-  deps.batterySafetyService.handleConfigUpdated(updatedConfig);
-  deps.lineAlertService.handleConfigUpdated(updatedConfig);
 
   return updatedConfig;
 }
@@ -446,78 +398,7 @@ async function handleWizardComplete(
 function normalizeWizardCompletePayload(
   payload: unknown,
 ): WizardCompletePayload {
-  if (typeof payload !== 'object' || payload === null) {
-    throw new Error('Wizard complete payload must be an object');
-  }
-
-  const candidate = payload as Record<string, unknown>;
-
-  if (typeof candidate.host !== 'string' || !candidate.host) {
-    throw new Error('host is required');
-  }
-
-  if (typeof candidate.port !== 'number') {
-    throw new Error('port is required');
-  }
-
-  if (typeof candidate.upsName !== 'string' || !candidate.upsName) {
-    throw new Error('upsName is required');
-  }
-
-  const result: WizardCompletePayload = {
-    host: candidate.host,
-    port: candidate.port,
-    upsName: candidate.upsName,
-  };
-
-  if (typeof candidate.username === 'string' && candidate.username) {
-    result.username = candidate.username;
-  }
-
-  if (typeof candidate.password === 'string' && candidate.password) {
-    result.password = candidate.password;
-  }
-
-  if (candidate.mapping !== undefined) {
-    if (typeof candidate.mapping !== 'object' || candidate.mapping === null) {
-      throw new Error('mapping must be an object');
-    }
-    result.mapping = candidate.mapping as Record<string, string>;
-  }
-
-  if (candidate.launchLocalComponents !== undefined) {
-    if (typeof candidate.launchLocalComponents !== 'boolean') {
-      throw new Error('launchLocalComponents must be a boolean');
-    }
-    result.launchLocalComponents = candidate.launchLocalComponents;
-  }
-
-  if (candidate.localNutFolderPath !== undefined) {
-    if (
-      typeof candidate.localNutFolderPath !== 'string' ||
-      !candidate.localNutFolderPath.trim()
-    ) {
-      throw new Error('localNutFolderPath must be a non-empty string');
-    }
-    result.localNutFolderPath = candidate.localNutFolderPath;
-  }
-
-  if (candidate.line !== undefined) {
-    const lineObj = candidate.line as Record<string, unknown>;
-    if (
-      typeof lineObj === 'object' &&
-      lineObj !== null &&
-      typeof lineObj.nominalVoltage === 'number' &&
-      typeof lineObj.nominalFrequency === 'number'
-    ) {
-      result.line = {
-        nominalVoltage: lineObj.nominalVoltage,
-        nominalFrequency: lineObj.nominalFrequency,
-      };
-    }
-  }
-
-  return result;
+  return wizardCompletePayloadSchema.parse(payload);
 }
 
 // ---------------------------------------------------------------------------
@@ -525,39 +406,24 @@ function normalizeWizardCompletePayload(
 // ---------------------------------------------------------------------------
 
 function normalizeQueryRangePayload(payload: unknown): QueryRangePayload {
-  if (typeof payload !== 'object' || payload === null) {
-    throw new Error('Telemetry query payload must be an object');
-  }
-
-  const candidate = payload as {
-    startIso?: unknown;
-    endIso?: unknown;
-    columns?: unknown;
-    maxPoints?: unknown;
-  };
-
-  if (typeof candidate.startIso !== 'string') {
-    throw new Error('Telemetry query payload requires startIso');
-  }
-
-  if (typeof candidate.endIso !== 'string') {
-    throw new Error('Telemetry query payload requires endIso');
-  }
-
-  const normalized: QueryRangePayload = {
+  const candidate = queryRangePayloadSchema.parse(payload);
+  return {
     startIso: candidate.startIso,
     endIso: candidate.endIso,
+    maxPoints: candidate.maxPoints,
+    columns: candidate.columns?.filter(isTelemetryColumn),
   };
+}
 
-  if (typeof candidate.maxPoints === 'number') {
-    normalized.maxPoints = candidate.maxPoints;
-  }
-
-  if (Array.isArray(candidate.columns)) {
-    normalized.columns = candidate.columns.filter(isTelemetryColumn);
-  }
-
-  return normalized;
+function normalizeTelemetryMinMaxRangePayload(
+  payload: unknown,
+): TelemetryMinMaxRangePayload {
+  const candidate = telemetryMinMaxRangePayloadSchema.parse(payload);
+  return {
+    startIso: candidate.startIso,
+    endIso: candidate.endIso,
+    columns: candidate.columns?.filter(isTelemetryColumn),
+  };
 }
 
 function isTelemetryColumn(value: unknown): value is TelemetryColumn {

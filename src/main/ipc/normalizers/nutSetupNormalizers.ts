@@ -6,6 +6,7 @@
   NutSetupValidateFolderPayload,
   SystemOpenExternalPayload,
 } from '../ipcChannels';
+import { systemOpenExternalPayloadSchema } from '../../../shared/ipc/schemas';
 
 export function normalizeNutSetupValidatePayload(
   payload: unknown,
@@ -199,14 +200,7 @@ export function normalizeNutSetupPrepareUsbHidPayload(
 export function normalizeSystemOpenExternalPayload(
   payload: unknown,
 ): SystemOpenExternalPayload {
-  if (typeof payload !== 'object' || payload === null) {
-    throw new Error('System open-external payload must be an object');
-  }
-
-  const candidate = payload as Record<string, unknown>;
-  if (typeof candidate.url !== 'string' || !candidate.url.trim()) {
-    throw new Error('url is required');
-  }
+  const candidate = systemOpenExternalPayloadSchema.parse(payload);
 
   let parsedUrl: URL;
   try {

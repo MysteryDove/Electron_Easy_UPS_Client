@@ -1,6 +1,5 @@
 import { Notification } from 'electron';
 import type { AppConfig } from '../config/configSchema';
-import type { ConfigStore } from '../config/configStore';
 import type { TelemetryValues } from '../db/telemetryRepository';
 import { t } from './i18nService';
 
@@ -12,13 +11,13 @@ import { t } from './i18nService';
  * Features a per-metric cooldown timer to avoid notification spam.
  */
 export class LineAlertService {
-    private readonly configStore: ConfigStore;
+    private lineConfig: AppConfig['line'];
 
     /** Maps a metric label to the Unix-ms timestamp of the last toast sent for it. */
     private readonly lastAlertTimestamp = new Map<string, number>();
 
-    public constructor(configStore: ConfigStore) {
-        this.configStore = configStore;
+    public constructor(config: AppConfig) {
+        this.lineConfig = config.line;
     }
 
     /**
@@ -26,7 +25,7 @@ export class LineAlertService {
      * frequencies against their configured tolerance ranges.
      */
     public handleTelemetry(values: TelemetryValues): void {
-        const { line } = this.configStore.get();
+        const line = this.lineConfig;
 
         if (!line.alertEnabled) {
             return;
@@ -51,6 +50,8 @@ export class LineAlertService {
     }
 
     public handleConfigUpdated(_config: AppConfig): void {
+        this.lineConfig = _config.line;
+
         // If alerts were disabled, clear the cooldown map so the first violation
         // after re-enabling fires immediately.
         if (!_config.line.alertEnabled) {

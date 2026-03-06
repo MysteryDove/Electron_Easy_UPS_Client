@@ -1,7 +1,6 @@
 import { Notification } from 'electron';
 import { exec } from 'node:child_process';
 import type { AppConfig } from '../config/configSchema';
-import type { ConfigStore } from '../config/configStore';
 import type { TelemetryValues } from '../db/telemetryRepository';
 import type { CriticalAlertWindow } from './criticalAlertWindow';
 import { t } from './i18nService';
@@ -9,16 +8,16 @@ import { t } from './i18nService';
 const BATTERY_RECOVERY_HYSTERESIS_PCT = 5;
 
 export class BatterySafetyService {
-  private readonly configStore: ConfigStore;
   private readonly criticalAlert: CriticalAlertWindow;
+  private batteryConfig: AppConfig['battery'];
   private warned = false;
   private shutdownWarned = false;
   private shutdownScheduled = false;
   private activeShutdownMethod: 'sleep' | 'shutdown' | null = null;
   private lastBatteryPercent: number | null = null;
 
-  public constructor(configStore: ConfigStore, criticalAlert: CriticalAlertWindow) {
-    this.configStore = configStore;
+  public constructor(config: AppConfig, criticalAlert: CriticalAlertWindow) {
+    this.batteryConfig = config.battery;
     this.criticalAlert = criticalAlert;
   }
 
@@ -28,7 +27,7 @@ export class BatterySafetyService {
       return;
     }
 
-    const { battery } = this.configStore.get();
+    const battery = this.batteryConfig;
     this.resetNotificationStateIfRecovered(batteryPercent, battery.warningPct);
 
     if (
@@ -107,6 +106,8 @@ export class BatterySafetyService {
   }
 
   public handleConfigUpdated(config: AppConfig): void {
+    this.batteryConfig = config.battery;
+
     if (!config.battery.shutdownEnabled) {
       this.cancelPendingWindowsShutdown();
     }

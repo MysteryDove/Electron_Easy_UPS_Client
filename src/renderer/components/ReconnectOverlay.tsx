@@ -2,6 +2,7 @@ import { Fragment, useEffect, useMemo, useState } from 'react';
 import { Transition } from '@headlessui/react';
 import { useTranslation } from 'react-i18next';
 import { useNavigate } from 'react-router-dom';
+import { electronApi } from '../app/electronApi';
 import { useConnection, useAppConfig } from '../app/providers';
 import { UiButton, UiDialog, UiDialogPanel, UiDialogTitle } from './ui';
 
@@ -17,15 +18,26 @@ export function ReconnectOverlay() {
     const [canContinue, setCanContinue] = useState(false);
     const [continuing, setContinuing] = useState(false);
     const targetComPort = localDriverLaunchIssue?.port?.trim().toUpperCase() ?? '';
+    const requiresPortRescan = localDriverLaunchIssue
+        ? shouldRequireSerialPortRescan(localDriverLaunchIssue)
+        : false;
+    const isUsbHidIssue = localDriverLaunchIssue
+        ? isUsbHidDriverIssue(localDriverLaunchIssue)
+        : false;
+    const allowsDirectRetry = Boolean(localDriverLaunchIssue) && !requiresPortRescan;
     const retryFailedFallback = t(
-        'reconnect.driverLogRetryFailed',
-        'Driver retry failed. Resolve issue and rescan before continuing.',
+        allowsDirectRetry
+            ? 'reconnect.driverLogRetryFailedDirect'
+            : 'reconnect.driverLogRetryFailed',
+        allowsDirectRetry
+            ? 'Driver retry failed. Resolve the issue and try again.'
+            : 'Driver retry failed. Resolve issue and rescan before continuing.',
     );
 
-    const resetRetryUiState = () => {
+    const resetRetryUiState = (nextCanContinue = false) => {
         setRescanState('idle');
         setRescanMessage(null);
-        setCanContinue(false);
+        setCanContinue(nextCanContinue);
         setContinuing(false);
     };
 
@@ -42,13 +54,13 @@ export function ReconnectOverlay() {
     useEffect(() => {
         if (state === 'ready') {
             setHasReachedReadyOnce(true);
-            resetRetryUiState();
+            resetRetryUiState(false);
         }
     }, [state]);
 
     useEffect(() => {
-        resetRetryUiState();
-    }, [localDriverLaunchIssue?.signature]);
+        resetRetryUiState(allowsDirectRetry);
+    }, [allowsDirectRetry, localDriverLaunchIssue?.signature]);
 
     // Do not show the overlay if the user is still in the setup wizard
     if (!config?.wizard.completed) {
@@ -88,6 +100,16 @@ export function ReconnectOverlay() {
                     'Driver failed to open {{port}}. The port may be busy, inaccessible, or disconnected.',
                     { port: localDriverLaunchIssue.port ?? 'the serial port' },
                 )
+                : localDriverLaunchIssue.code === 'USB_HID_UPS_NOT_FOUND'
+                    ? t(
+                        'reconnect.driverLogSummaryUsbHidNoMatchingUps',
+                        'usbhid-ups started, but no matching HID UPS was found. Check the USB cable, UPS power, and optional VID/PID settings, then retry.',
+                    )
+                    : isUsbHidIssue
+                        ? t(
+                            'reconnect.driverLogSummaryUsbHidGeneric',
+                            'usbhid-ups failed during startup. Check the USB cable, UPS power, and optional VID/PID settings, then retry.',
+                        )
                 : t(
                     'reconnect.driverLogSummaryGeneric',
                     'Driver launch failed during cold start. Review logs below for details.',
@@ -141,7 +163,7 @@ export function ReconnectOverlay() {
         setRescanMessage(null);
 
         try {
-            const result = await window.electronApi.nutSetup.listComPorts();
+            const result = await electronApi.nutSetup.listComPorts();
             const found = result.ports.includes(targetComPort);
             if (found) {
                 setRescanState('success');
@@ -180,7 +202,7 @@ export function ReconnectOverlay() {
 
         setContinuing(true);
         try {
-            const result = await window.electronApi.nut.retryLocalDriverLaunch();
+            const result = await electronApi.nut.retryLocalDriverLaunch();
             if (!result.success) {
                 setRetryFailure(
                     result.error ?? retryFailedFallback,
@@ -245,7 +267,14 @@ export function ReconnectOverlay() {
                                     id="driver-launch-issue-title"
                                     className="driver-launch-issue-title"
                                 >
-                                    {t('reconnect.driverLogTitle', 'Driver startup failed')}
+                                    {t(
+                                        isUsbHidIssue
+                                            ? 'reconnect.driverLogTitleUsbHid'
+                                            : 'reconnect.driverLogTitle',
+                                        isUsbHidIssue
+                                            ? 'USB HID driver startup failed'
+                                            : 'Driver startup failed',
+                                    )}
                                 </UiDialogTitle>
                                 <p className="driver-launch-issue-summary">{issueSummary}</p>
                                 <div className="driver-launch-issue-meta">
@@ -283,16 +312,18 @@ export function ReconnectOverlay() {
                                     {t('reconnect.driverLogReconfigure', 'Re-configure')}
                                 </UiButton>
                                 <div className="driver-launch-issue-actions-right">
-                                    <UiButton
-                                        type="button"
-                                        className="btn btn--secondary"
-                                        onClick={handleRescan}
-                                        disabled={rescanState === 'scanning' || continuing}
-                                    >
-                                        {rescanState === 'scanning'
-                                            ? t('reconnect.driverLogRescanning', 'Rescanning...')
-                                            : t('reconnect.driverLogRescan', 'Rescan')}
-                                    </UiButton>
+                                    {requiresPortRescan && (
+                                        <UiButton
+                                            type="button"
+                                            className="btn btn--secondary"
+                                            onClick={handleRescan}
+                                            disabled={rescanState === 'scanning' || continuing}
+                                        >
+                                            {rescanState === 'scanning'
+                                                ? t('reconnect.driverLogRescanning', 'Rescanning...')
+                                                : t('reconnect.driverLogRescan', 'Rescan')}
+                                        </UiButton>
+                                    )}
                                     <UiButton
                                         type="button"
                                         className="btn btn--primary"
@@ -300,8 +331,20 @@ export function ReconnectOverlay() {
                                         disabled={!canContinue || continuing}
                                     >
                                         {continuing
-                                            ? t('reconnect.driverLogContinuing', 'Continuing...')
-                                            : t('reconnect.driverLogContinue', 'Continue')}
+                                            ? t(
+                                                requiresPortRescan
+                                                    ? 'reconnect.driverLogContinuing'
+                                                    : 'reconnect.driverLogRetrying',
+                                                requiresPortRescan
+                                                    ? 'Continuing...'
+                                                    : 'Retrying...',
+                                            )
+                                            : t(
+                                                requiresPortRescan
+                                                    ? 'reconnect.driverLogContinue'
+                                                    : 'reconnect.driverLogRetry',
+                                                requiresPortRescan ? 'Continue' : 'Retry',
+                                            )}
                                     </UiButton>
                                 </div>
                             </div>
@@ -311,4 +354,19 @@ export function ReconnectOverlay() {
             </div>
         </Transition>
     );
+}
+
+function shouldRequireSerialPortRescan(
+    issue: NonNullable<ReturnType<typeof useConnection>['localDriverLaunchIssue']>,
+): boolean {
+    return issue.code === 'SERIAL_COM_PRECHECK_MISSING'
+        || issue.code === 'SERIAL_COM_OPEN_FAILED';
+}
+
+function isUsbHidDriverIssue(
+    issue: NonNullable<ReturnType<typeof useConnection>['localDriverLaunchIssue']>,
+): boolean {
+    return issue.code === 'USB_HID_DRIVER_LAUNCH_FAILED'
+        || issue.code === 'USB_HID_UPS_NOT_FOUND'
+        || issue.driverExecutable?.trim().toLowerCase() === 'usbhid-ups';
 }

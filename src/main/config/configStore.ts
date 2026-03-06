@@ -18,6 +18,7 @@ type ConfigStoreData = {
 
 export class ConfigStore {
   private readonly store: Store<ConfigStoreData>;
+  private cachedSettings: AppConfig;
 
   public constructor() {
     this.store = new Store<ConfigStoreData>({
@@ -28,31 +29,32 @@ export class ConfigStore {
     });
 
     if (shouldResetSettingsOnStart()) {
-      this.store.set('settings', applyStartupOverrides(defaultAppConfig));
+      this.cachedSettings = applyStartupOverrides(defaultAppConfig);
+      this.store.set('settings', this.cachedSettings);
       return;
     }
 
-    this.store.set(
-      'settings',
-      applyStartupOverrides(normalizeStoredConfig(this.store.get('settings'))),
+    this.cachedSettings = applyStartupOverrides(
+      normalizeStoredConfig(this.store.get('settings')),
     );
+    this.store.set('settings', this.cachedSettings);
   }
 
   public get(): AppConfig {
-    const normalized = normalizeStoredConfig(this.store.get('settings'));
-    this.store.set('settings', normalized);
-    return normalized;
+    return this.cachedSettings;
   }
 
   public set(payload: unknown): AppConfig {
-    const parsed = appConfigSchema.parse(payload);
+    const parsed = normalizeStoredConfig(appConfigSchema.parse(payload));
+    this.cachedSettings = parsed;
     this.store.set('settings', parsed);
     return parsed;
   }
 
   public update(patchPayload: unknown): AppConfig {
     const patch = parseConfigPatch(patchPayload);
-    const next = applyConfigPatch(this.get(), patch);
+    const next = normalizeStoredConfig(applyConfigPatch(this.cachedSettings, patch));
+    this.cachedSettings = next;
     this.store.set('settings', next);
     return next;
   }

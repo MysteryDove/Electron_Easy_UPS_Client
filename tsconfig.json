@@ -12,5 +12,6 @@
     "outDir": "dist",
     "moduleResolution": "bundler",
     "resolveJsonModule": true
-  }
+  },
+  "include": ["src/**/*.ts", "src/**/*.tsx", "src/**/*.d.ts"]
 }

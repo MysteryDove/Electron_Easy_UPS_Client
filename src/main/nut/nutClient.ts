@@ -166,14 +166,39 @@ export class NutClient {
     upsName: string,
     variableNames: string[],
   ): Promise<Record<string, string>> {
-    const values: Record<string, string> = {};
+    return this.enqueue(async () => {
+      const uniqueVariableNames = [...new Set(variableNames)];
+      if (uniqueVariableNames.length === 0) {
+        return {};
+      }
 
-    for (const variableName of variableNames) {
-      const value = await this.getVariable(upsName, variableName);
-      values[variableName] = value;
-    }
+      for (const variableName of uniqueVariableNames) {
+        await this.writeLine(
+          `GET VAR ${formatCommandToken(upsName)} ${formatCommandToken(
+            variableName,
+          )}`,
+        );
+      }
 
-    return values;
+      const values: Record<string, string> = {};
+      for (const variableName of uniqueVariableNames) {
+        const line = await this.readLine(this.timeoutMs);
+        if (line.startsWith('ERR ')) {
+          throw new NutProtocolError(
+            `GET VAR ${variableName} failed with ${line}`,
+          );
+        }
+
+        const parsed = parseVarLine(line);
+        if (!parsed || parsed.upsName !== upsName) {
+          throw new NutProtocolError(`Unexpected GET VAR response: ${line}`);
+        }
+
+        values[parsed.variableName] = parsed.value;
+      }
+
+      return values;
+    });
   }
 
   private async executeSimpleCommand(command: string): Promise<void> {
