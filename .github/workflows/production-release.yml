@@ -29,7 +29,7 @@ concurrency:
 
 jobs:
   quality:
-    name: Lint and type-check
+    name: Lint, test, and type-check
     runs-on: ubuntu-latest
     env:
       NPM_CONFIG_CACHE: ${{ github.workspace }}/.npm-cache
@@ -53,6 +53,9 @@ jobs:
 
       - name: Lint
         run: npm run lint
+
+      - name: Test
+        run: npm test
 
       - name: Type-check
         run: npx tsc --noEmit
