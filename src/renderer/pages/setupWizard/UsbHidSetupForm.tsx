@@ -1,4 +1,5 @@
 import { useTranslation } from 'react-i18next';
+import { UiCheckbox, UiInput } from '../../components/ui';
 
 export type UsbHidSetupFormProps = {
   upsName: string;
@@ -49,7 +50,7 @@ export function UsbHidSetupForm({
         <label className="form-label" htmlFor="wiz-usbhid-ups-name">
           {t('wizard.usbHidUpsName', 'UPS Name')}
         </label>
-        <input
+        <UiInput
           id="wiz-usbhid-ups-name"
           className="form-input"
           type="text"
@@ -71,7 +72,7 @@ export function UsbHidSetupForm({
         <label className="form-label" htmlFor="wiz-usbhid-port">
           {t('wizard.usbHidPort', 'Port')}
         </label>
-        <input
+        <UiInput
           id="wiz-usbhid-port"
           className="form-input"
           type="text"
@@ -86,9 +87,8 @@ export function UsbHidSetupForm({
 
       <div className="form-group">
         <label className="form-toggle" htmlFor="wiz-usbhid-specify-vidpid">
-          <input
+          <UiCheckbox
             id="wiz-usbhid-specify-vidpid"
-            type="checkbox"
             checked={specifyVidPid}
             onChange={(event) => onSpecifyVidPidChange(event.target.checked)}
           />
@@ -103,7 +103,7 @@ export function UsbHidSetupForm({
           <label className="form-label" htmlFor="wiz-usbhid-vendorid">
             {t('wizard.usbHidVendorId', 'Vendor ID')}
           </label>
-          <input
+          <UiInput
             id="wiz-usbhid-vendorid"
             className="form-input"
             type="text"
@@ -122,7 +122,7 @@ export function UsbHidSetupForm({
           <label className="form-label" htmlFor="wiz-usbhid-productid">
             {t('wizard.usbHidProductId', 'Product ID')}
           </label>
-          <input
+          <UiInput
             id="wiz-usbhid-productid"
             className="form-input"
             type="text"
@@ -147,9 +147,8 @@ export function UsbHidSetupForm({
 
       <div className="form-row form-row--two" style={{ marginTop: '8px' }}>
         <label className="form-toggle" htmlFor="wiz-usbhid-experimentalhid">
-          <input
+          <UiCheckbox
             id="wiz-usbhid-experimentalhid"
-            type="checkbox"
             checked
             disabled
             readOnly
@@ -160,9 +159,8 @@ export function UsbHidSetupForm({
         </label>
 
         <label className="form-toggle" htmlFor="wiz-usbhid-pollonly">
-          <input
+          <UiCheckbox
             id="wiz-usbhid-pollonly"
-            type="checkbox"
             checked
             disabled
             readOnly

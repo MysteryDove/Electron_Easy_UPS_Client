@@ -69,12 +69,20 @@ export type NutSetupValidateFolderPayload = {
   requireUsbHidExperimentalSupport?: boolean;
 };
 
+export type NutSetupUsbHidExperimentalIssueCode =
+  | 'FOLDER_EMPTY'
+  | 'FOLDER_INCOMPLETE'
+  | 'MISSING_DRIVER_BINARY'
+  | 'INCOMPATIBLE_WINDOWS_BUILD'
+  | 'RUN_HELP_FAILED';
+
 export type NutSetupValidateFolderResult = {
   valid: boolean;
   missing: string[];
   writable: boolean;
   usbHidExperimentalSupport?: boolean;
   usbHidExperimentalMessage?: string;
+  usbHidExperimentalIssueCode?: NutSetupUsbHidExperimentalIssueCode;
 };
 
 export type NutSetupPrepareLocalNutPayload = {
@@ -96,6 +104,7 @@ export type NutSetupPrepareLocalNutPayload = {
 export type NutSetupPrepareLocalNutResult = {
   success: boolean;
   error?: string;
+  technicalDetails?: string;
 };
 
 export type NutSetupListSerialDriversPayload = {
@@ -142,6 +151,7 @@ export type NutSetupPrepareUsbHidPayload = {
 export type NutSetupPrepareUsbHidResult = {
   success: boolean;
   error?: string;
+  technicalDetails?: string;
 };
 
 export type NutRetryLocalDriverLaunchResult = {

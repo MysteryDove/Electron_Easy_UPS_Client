@@ -11,6 +11,7 @@ import {
     PanelLeftClose,
     PanelLeftOpen,
 } from 'lucide-react';
+import { UiButton } from './ui';
 
 const MAIN_NAV_ITEMS = [
     { to: '/dashboard', labelKey: 'appShell.navDashboard', icon: <LayoutDashboard size={20} /> },
@@ -33,13 +34,13 @@ export function AppShell({ children }: { children: ReactNode }) {
             {/* Sidebar */}
             <aside className={`sidebar ${isCollapsed ? 'sidebar--collapsed' : ''}`}>
                 <div className="sidebar-brand">
-                    <button
+                    <UiButton
                         className="sidebar-toggle"
                         onClick={() => setIsCollapsed(!isCollapsed)}
                         title={isCollapsed ? t('appShell.expandSidebar') : t('appShell.collapseSidebar')}
                     >
                         {isCollapsed ? <PanelLeftOpen size={24} /> : <PanelLeftClose size={24} />}
-                    </button>
+                    </UiButton>
                 </div>
 
                 <nav className="sidebar-nav">

@@ -1,4 +1,4 @@
-import { useState, useCallback } from 'react';
+﻿import { useState, useCallback, useReducer } from 'react';
 import { useTranslation } from 'react-i18next';
 import { useAppConfig } from '../app/providers';
 import {
@@ -11,6 +11,7 @@ import type {
   NutSetupPrepareLocalDriverResult,
   NutSetupPrepareLocalNutPayload,
   NutSetupPrepareUsbHidPayload,
+  NutSetupPrepareUsbHidResult,
   NutSetupValidateFolderResult,
 } from '../../main/ipc/ipcChannels';
 import { ChooseSetupModeStep } from './setupWizard/ChooseSetupModeStep';
@@ -26,6 +27,27 @@ import type {
   TestStatus,
   WizardStep,
 } from './setupWizard/types';
+import {
+  isValidPollfreq,
+  isValidSnmpTarget,
+  isValidSnmpV3Configuration,
+  isValidUpsName,
+  isValidUsbDeviceId,
+  normalizeComPort,
+  normalizeUsbDeviceId,
+} from '../../shared/wizard/validation';
+import { hasNoMatchingUsbHidUpsSignal } from '../../shared/wizard/usbHidErrors';
+import { UiButton, UiInput, UiSelect } from '../components/ui';
+import {
+  initialWizardUiState,
+  wizardUiReducer,
+} from './setupWizard/state/wizardReducer';
+import {
+  selectCanPrepareLocalDriver,
+  selectCanPrepareLocalNut,
+  selectCanPrepareLocalUsbHid,
+} from './setupWizard/state/wizardSelectors';
+import { useWizardActions } from './setupWizard/actions/useWizardActions';
 
 
 const DEFAULT_MAPPING: Record<string, string> = {
@@ -43,14 +65,6 @@ const DEFAULT_MAPPING: Record<string, string> = {
   ups_realpower_watts: 'ups.realpower',
   ups_load_pct: 'ups.load',
 };
-
-const UPS_NAME_PATTERN = /^[a-zA-Z0-9-]+$/;
-const IPV4_OCTET_PATTERN = '(?:25[0-5]|2[0-4]\\d|1\\d\\d|[1-9]?\\d)';
-const SNMP_TARGET_PATTERN = new RegExp(
-  `^${IPV4_OCTET_PATTERN}(?:\\.${IPV4_OCTET_PATTERN}){3}(?::([1-9]\\d{0,4}))?$`,
-);
-const COM_PORT_PATTERN = /^COM\d+$/i;
-const USB_DEVICE_ID_PATTERN = /^[0-9a-f]{4}$/i;
 
 export function SetupWizardPage() {
   const navigate = routerUseNavigate();
@@ -73,19 +87,67 @@ export function SetupWizardPage() {
     ups_load_pct: t('metrics.upsLoad'),
   };
 
-  const [mode, setMode] = useState<SetupMode>('directNut');
-  const [step, setStep] = useState<WizardStep>('choose');
+  const [uiState, dispatchUi] = useReducer(wizardUiReducer, initialWizardUiState);
+  const {
+    mode,
+    step,
+    testStatus,
+    testError,
+    upsDescription,
+    completing,
+    installStatus,
+    installError,
+    installErrorDetails,
+  } = uiState;
+
+  const {
+    testConnection,
+    completeWizard,
+    chooseNutFolder,
+    validateNutFolder,
+    prepareLocalNut,
+    listSerialDrivers,
+    listComPorts,
+    prepareLocalDriver,
+    prepareUsbHid,
+  } = useWizardActions();
+
+  const setMode = useCallback((nextMode: SetupMode) => {
+    dispatchUi({ type: 'setMode', mode: nextMode });
+  }, []);
+  const setStep = useCallback((nextStep: WizardStep) => {
+    dispatchUi({ type: 'setStep', step: nextStep });
+  }, []);
+  const setTestStatus = useCallback((status: TestStatus) => {
+    dispatchUi({ type: 'setTestStatus', status });
+  }, []);
+  const setTestError = useCallback((error: string | null) => {
+    dispatchUi({ type: 'setTestError', error });
+  }, []);
+  const setUpsDescription = useCallback((description: string | null) => {
+    dispatchUi({ type: 'setUpsDescription', upsDescription: description });
+  }, []);
+  const setCompleting = useCallback((nextCompleting: boolean) => {
+    dispatchUi({ type: 'setCompleting', completing: nextCompleting });
+  }, []);
+  const setInstallStatus = useCallback((status: InstallStatus) => {
+    dispatchUi({ type: 'setInstallStatus', status });
+  }, []);
+  const setInstallError = useCallback((error: string | null) => {
+    dispatchUi({ type: 'setInstallError', error });
+  }, []);
+  const setInstallErrorDetails = useCallback((details: string | null) => {
+    dispatchUi({ type: 'setInstallErrorDetails', details });
+  }, []);
+  const resetInstallUi = useCallback(() => {
+    dispatchUi({ type: 'resetInstallState' });
+  }, []);
 
   const [host, setHost] = useState(config?.nut?.host || '127.0.0.1');
   const [port, setPort] = useState(config?.nut?.port || 3493);
   const [username, setUsername] = useState(config?.nut?.username || '');
   const [password, setPassword] = useState(config?.nut?.password || '');
   const [upsName, setUpsName] = useState(config?.nut?.upsName || 'snmpups');
-
-  const [testStatus, setTestStatus] = useState<TestStatus>('idle');
-  const [testError, setTestError] = useState<string | null>(null);
-  const [upsDescription, setUpsDescription] = useState<string | null>(null);
-  const [completing, setCompleting] = useState(false);
 
   const [availableVariables, setAvailableVariables] = useState<string[]>([]);
   const [mapping, setMapping] = useState<Record<string, string>>(
@@ -127,69 +189,67 @@ export function SetupWizardPage() {
   const [privProtocol, setPrivProtocol] = useState<PrivProtocol>('AES');
   const [privPassword, setPrivPassword] = useState('');
 
-  const [installStatus, setInstallStatus] = useState<InstallStatus>('idle');
-  const [installError, setInstallError] = useState<string | null>(null);
-  const [installErrorDetails, setInstallErrorDetails] = useState<string | null>(null);
-
   const normalizedDriverName = typeof driverName === 'string' ? driverName : '';
   const normalizedDriverFilter =
     typeof driverFilter === 'string' ? driverFilter : '';
   const normalizedTtymode = typeof ttymode === 'string' ? ttymode : '';
-  const normalizedVendorId = vendorId.trim().toLowerCase();
-  const normalizedProductId = productId.trim().toLowerCase();
-  const upsNameValid = UPS_NAME_PATTERN.test(upsName);
+  const normalizedVendorId = normalizeUsbDeviceId(vendorId);
+  const normalizedProductId = normalizeUsbDeviceId(productId);
+  const upsNameValid = isValidUpsName(upsName);
   const snmpTargetValid = isValidSnmpTarget(snmpTarget);
   const normalizedDriverPort = normalizeComPort(driverPort);
-  const vendorIdValid = USB_DEVICE_ID_PATTERN.test(normalizedVendorId);
-  const productIdValid = USB_DEVICE_ID_PATTERN.test(normalizedProductId);
+  const vendorIdValid = isValidUsbDeviceId(normalizedVendorId);
+  const productIdValid = isValidUsbDeviceId(normalizedProductId);
   const driverNameValid =
     normalizedDriverName.trim().length > 0 &&
     availableDrivers.includes(normalizedDriverName);
   const driverPortValid = normalizedDriverPort !== null;
   const ttymodeValid = normalizedTtymode.trim().length > 0;
-  const pollfreqValid = Number.isInteger(pollfreq) && pollfreq >= 3 && pollfreq <= 15;
-  const authRequired = snmpVersion === 'v3' && (secLevel === 'authNoPriv' || secLevel === 'authPriv');
-  const privRequired = snmpVersion === 'v3' && secLevel === 'authPriv';
-  const v3Valid =
-    snmpVersion !== 'v3' ||
-    (secName.trim().length > 0 &&
-      (!authRequired ||
-        (authProtocol.length > 0 && authPassword.trim().length > 0)) &&
-      (!privRequired ||
-        (privProtocol.length > 0 && privPassword.trim().length > 0)));
+  const pollfreqValid = isValidPollfreq(pollfreq);
+  const v3Valid = isValidSnmpV3Configuration({
+    snmpVersion,
+    secLevel,
+    secName,
+    authProtocol,
+    authPassword,
+    privProtocol,
+    privPassword,
+  });
   const hasFolderValidation = !validatingFolder && folderValidation !== null;
   const isFolderValid = hasFolderValidation && folderValidation.valid;
   const requiresUac = isFolderValid && !folderValidation.writable;
 
-  const canPrepareLocalNut =
-    isFolderValid &&
-    upsNameValid &&
-    snmpTargetValid &&
-    pollfreqValid &&
-    v3Valid &&
-    !validatingFolder &&
-    installStatus !== 'installing';
+  const canPrepareLocalNut = selectCanPrepareLocalNut({
+    isFolderValid,
+    upsNameValid,
+    snmpTargetValid,
+    pollfreqValid,
+    v3Valid,
+    validatingFolder,
+    installStatus,
+  });
 
-  const canPrepareLocalDriver =
-    isFolderValid &&
-    upsNameValid &&
-    driverNameValid &&
-    driverPortValid &&
-    ttymodeValid &&
-    !validatingFolder &&
-    installStatus !== 'installing';
+  const canPrepareLocalDriver = selectCanPrepareLocalDriver({
+    isFolderValid,
+    upsNameValid,
+    driverNameValid,
+    driverPortValid,
+    ttymodeValid,
+    validatingFolder,
+    installStatus,
+  });
 
-  const canPrepareLocalUsbHid =
-    isFolderValid &&
-    upsNameValid &&
-    (!specifyVidPid || (
-      normalizedVendorId.length > 0 &&
-      normalizedProductId.length > 0 &&
-      vendorIdValid &&
-      productIdValid
-    )) &&
-    !validatingFolder &&
-    installStatus !== 'installing';
+  const canPrepareLocalUsbHid = selectCanPrepareLocalUsbHid({
+    isFolderValid,
+    upsNameValid,
+    specifyVidPid,
+    normalizedVendorId,
+    normalizedProductId,
+    vendorIdValid,
+    productIdValid,
+    validatingFolder,
+    installStatus,
+  });
 
   const filteredDrivers = availableDrivers.filter((candidateDriver) =>
     candidateDriver.toLowerCase().includes(normalizedDriverFilter.trim().toLowerCase()),
@@ -231,13 +291,29 @@ export function SetupWizardPage() {
     }
   }, [t]);
 
+  const resolveUsbHidInstallErrorMessage = useCallback((
+    result: NutSetupPrepareUsbHidResult,
+  ): string => {
+    const fallback =
+      result.error ?? 'Failed to configure and start local NUT USB HID driver';
+
+    if (hasNoMatchingUsbHidUpsSignal(result.error, result.technicalDetails)) {
+      return t(
+        'wizard.usbHidNoMatchingUps',
+        'No matching HID UPS found. Check USB cable/power and optional VID/PID settings, then retry.',
+      );
+    }
+
+    return fallback;
+  }, [t]);
+
   const handleTestConnection = useCallback(async () => {
     setTestStatus('testing');
     setTestError(null);
     setUpsDescription(null);
 
     try {
-      const result = await window.electronApi.wizard.testConnection({
+      const result = await testConnection({
         host,
         port,
         username: username || undefined,
@@ -280,7 +356,7 @@ export function SetupWizardPage() {
         }
       }
 
-      await window.electronApi.wizard.complete({
+      await completeWizard({
         host,
         port,
         username: username || undefined,
@@ -330,8 +406,8 @@ export function SetupWizardPage() {
 
   const refreshSerialSetupOptions = useCallback(async (folderPath: string) => {
     const [driversResult, portsResult] = await Promise.all([
-      window.electronApi.nutSetup.listSerialDrivers({ folderPath }),
-      window.electronApi.nutSetup.listComPorts(),
+      listSerialDrivers({ folderPath }),
+      listComPorts(),
     ]);
 
     setAvailableDrivers(driversResult.drivers);
@@ -359,7 +435,7 @@ export function SetupWizardPage() {
     }
 
     try {
-      const result = await window.electronApi.nutSetup.listComPorts();
+      const result = await listComPorts();
       setAvailableComPorts(result.ports);
       setDriverPort((previousDriverPort) => {
         const previousNormalizedPort = normalizeComPort(previousDriverPort);
@@ -375,13 +451,11 @@ export function SetupWizardPage() {
   }, [mode]);
 
   const handleChooseNutFolder = useCallback(async () => {
-    setInstallStatus('idle');
-    setInstallError(null);
-    setInstallErrorDetails(null);
+    resetInstallUi();
     setDriverFilter('');
 
     try {
-      const selection = await window.electronApi.nutSetup.chooseFolder();
+      const selection = await chooseNutFolder();
       if (selection.cancelled || !selection.folderPath) {
         return;
       }
@@ -394,7 +468,7 @@ export function SetupWizardPage() {
       }
       setValidatingFolder(true);
 
-      const validation = await window.electronApi.nutSetup.validateFolder({
+      const validation = await validateNutFolder({
         folderPath: selection.folderPath,
         requireUsbHidExperimentalSupport: mode === 'usbHidSetup',
       });
@@ -451,11 +525,11 @@ export function SetupWizardPage() {
         }
       }
 
-      const result = await window.electronApi.nutSetup.prepareLocalNut(payload);
+      const result = await prepareLocalNut(payload);
       if (!result.success) {
         setInstallStatus('error');
         setInstallError(result.error ?? 'Failed to configure and start local NUT');
-        setInstallErrorDetails(null);
+        setInstallErrorDetails(result.technicalDetails ?? null);
         return;
       }
 
@@ -463,7 +537,7 @@ export function SetupWizardPage() {
     } catch (err) {
       setInstallStatus('error');
       setInstallError(err instanceof Error ? err.message : 'Failed to configure and start local NUT');
-      setInstallErrorDetails(null);
+      setInstallErrorDetails(err instanceof Error ? err.message : null);
     }
   }, [
     canPrepareLocalNut,
@@ -501,7 +575,7 @@ export function SetupWizardPage() {
         ttymode: normalizedTtymode.trim() || 'raw',
       };
 
-      const result = await window.electronApi.nutSetup.prepareLocalDriver(payload);
+      const result = await prepareLocalDriver(payload);
       if (!result.success) {
         setInstallStatus('error');
         setInstallError(resolveSerialDriverInstallErrorMessage(
@@ -516,7 +590,7 @@ export function SetupWizardPage() {
     } catch (err) {
       setInstallStatus('error');
       setInstallError(err instanceof Error ? err.message : 'Failed to configure and start local NUT serial driver');
-      setInstallErrorDetails(null);
+      setInstallErrorDetails(err instanceof Error ? err.message : null);
     }
   }, [
     canPrepareLocalDriver,
@@ -552,11 +626,11 @@ export function SetupWizardPage() {
           : {}),
       };
 
-      const result = await window.electronApi.nutSetup.prepareUsbHid(payload);
+      const result = await prepareUsbHid(payload);
       if (!result.success) {
         setInstallStatus('error');
-        setInstallError(result.error ?? 'Failed to configure and start local NUT USB HID driver');
-        setInstallErrorDetails(null);
+        setInstallError(resolveUsbHidInstallErrorMessage(result));
+        setInstallErrorDetails(result.technicalDetails ?? null);
         return;
       }
 
@@ -564,7 +638,7 @@ export function SetupWizardPage() {
     } catch (err) {
       setInstallStatus('error');
       setInstallError(err instanceof Error ? err.message : 'Failed to configure and start local NUT USB HID driver');
-      setInstallErrorDetails(null);
+      setInstallErrorDetails(err instanceof Error ? err.message : null);
     }
   }, [
     canPrepareLocalUsbHid,
@@ -574,6 +648,7 @@ export function SetupWizardPage() {
     specifyVidPid,
     normalizedVendorId,
     normalizedProductId,
+    resolveUsbHidInstallErrorMessage,
     handlePrepareLocalSuccess,
   ]);
 
@@ -582,16 +657,12 @@ export function SetupWizardPage() {
       <ChooseSetupModeStep
         onChooseDirectNut={() => {
           setMode('directNut');
-          setInstallStatus('idle');
-          setInstallError(null);
-          setInstallErrorDetails(null);
+          resetInstallUi();
           setStep('connect');
         }}
         onChooseSnmpSetup={() => {
           setMode('snmpSetup');
-          setInstallStatus('idle');
-          setInstallError(null);
-          setInstallErrorDetails(null);
+          resetInstallUi();
           setUpsName((previous) => {
             const normalized = previous.trim().toLowerCase();
             if (!normalized || normalized === 'serialups') {
@@ -603,9 +674,7 @@ export function SetupWizardPage() {
         }}
         onChooseSerialSetup={() => {
           setMode('serialSetup');
-          setInstallStatus('idle');
-          setInstallError(null);
-          setInstallErrorDetails(null);
+          resetInstallUi();
           setUpsName((previous) => {
             const normalized = previous.trim().toLowerCase();
             if (!normalized || normalized === 'snmpups') {
@@ -624,9 +693,7 @@ export function SetupWizardPage() {
         }}
         onChooseUsbHidSetup={() => {
           setMode('usbHidSetup');
-          setInstallStatus('idle');
-          setInstallError(null);
-          setInstallErrorDetails(null);
+          resetInstallUi();
           setUpsName((previous) => {
             const normalized = previous.trim().toLowerCase();
             if (!normalized || normalized === 'snmpups' || normalized === 'serialups') {
@@ -688,51 +755,51 @@ export function SetupWizardPage() {
           privPassword,
           onUpsNameChange: (value: string) => {
             setUpsName(value);
-            setInstallStatus('idle');
+            resetInstallUi();
           },
           onSnmpTargetChange: (value: string) => {
             setSnmpTarget(value);
-            setInstallStatus('idle');
+            resetInstallUi();
           },
           onSnmpVersionChange: (value: SnmpVersion) => {
             setSnmpVersion(value);
-            setInstallStatus('idle');
+            resetInstallUi();
           },
           onPollfreqChange: (value: number) => {
             setPollfreq(value);
-            setInstallStatus('idle');
+            resetInstallUi();
           },
           onMibsChange: (value: string) => {
             setMibs(value);
-            setInstallStatus('idle');
+            resetInstallUi();
           },
           onCommunityChange: (value: string) => {
             setCommunity(value);
-            setInstallStatus('idle');
+            resetInstallUi();
           },
           onSecLevelChange: (value: SecLevel) => {
             setSecLevel(value);
-            setInstallStatus('idle');
+            resetInstallUi();
           },
           onSecNameChange: (value: string) => {
             setSecName(value);
-            setInstallStatus('idle');
+            resetInstallUi();
           },
           onAuthProtocolChange: (value: AuthProtocol) => {
             setAuthProtocol(value);
-            setInstallStatus('idle');
+            resetInstallUi();
           },
           onAuthPasswordChange: (value: string) => {
             setAuthPassword(value);
-            setInstallStatus('idle');
+            resetInstallUi();
           },
           onPrivProtocolChange: (value: PrivProtocol) => {
             setPrivProtocol(value);
-            setInstallStatus('idle');
+            resetInstallUi();
           },
           onPrivPasswordChange: (value: string) => {
             setPrivPassword(value);
-            setInstallStatus('idle');
+            resetInstallUi();
           },
         }}
         serialFormProps={{
@@ -751,23 +818,23 @@ export function SetupWizardPage() {
           installStatus,
           onUpsNameChange: (value: string) => {
             setUpsName(value);
-            setInstallStatus('idle');
+            resetInstallUi();
           },
           onDriverFilterChange: (value: string) => {
             setDriverFilter(typeof value === 'string' ? value : '');
           },
           onDriverNameChange: (value: string) => {
             setDriverName(typeof value === 'string' ? value : '');
-            setInstallStatus('idle');
+            resetInstallUi();
           },
           onRefreshComPorts: handleRefreshComPorts,
           onDriverPortChange: (value: string) => {
             setDriverPort(value);
-            setInstallStatus('idle');
+            resetInstallUi();
           },
           onTtymodeChange: (value: string) => {
             setTtymode(value);
-            setInstallStatus('idle');
+            resetInstallUi();
           },
         }}
         usbHidFormProps={{
@@ -781,19 +848,19 @@ export function SetupWizardPage() {
           productIdValid,
           onUpsNameChange: (value: string) => {
             setUpsName(value);
-            setInstallStatus('idle');
+            resetInstallUi();
           },
           onSpecifyVidPidChange: (value: boolean) => {
             setSpecifyVidPid(value);
-            setInstallStatus('idle');
+            resetInstallUi();
           },
           onVendorIdChange: (value: string) => {
             setVendorId(value);
-            setInstallStatus('idle');
+            resetInstallUi();
           },
           onProductIdChange: (value: string) => {
             setProductId(value);
-            setInstallStatus('idle');
+            resetInstallUi();
           },
         }}
       />
@@ -816,7 +883,7 @@ export function SetupWizardPage() {
             {Object.entries(MAPPING_LABELS).map(([key, label]) => (
               <div className="form-group" key={key}>
                 <label className="form-label">{label}</label>
-                <select
+                <UiSelect
                   className="form-input"
                   value={mapping[key] || ''}
                   onChange={(e) => setMapping((previous) => ({
@@ -831,7 +898,7 @@ export function SetupWizardPage() {
                   {mapping[key] && !availableVariables.includes(mapping[key]) && (
                     <option value={mapping[key]}>{mapping[key]} ({t('wizard.notFound')})</option>
                   )}
-                </select>
+                </UiSelect>
               </div>
             ))}
           </div>
@@ -844,21 +911,21 @@ export function SetupWizardPage() {
           )}
 
           <div className="wizard-actions" style={{ flexShrink: 0, marginTop: '20px' }}>
-            <button
+            <UiButton
               className="btn btn--secondary"
               onClick={() => setStep('connect')}
               disabled={completing}
             >
               {t('wizard.back')}
-            </button>
+            </UiButton>
 
-            <button
+            <UiButton
               className="btn btn--primary"
               onClick={() => setStep('line')}
               disabled={completing}
             >
               {t('wizard.continue')}
-            </button>
+            </UiButton>
           </div>
         </div>
       </div>
@@ -886,7 +953,7 @@ export function SetupWizardPage() {
                 <label className="form-label" htmlFor="wiz-nom-voltage">
                   {t('wizard.nominalVoltage')}
                 </label>
-                <input
+                <UiInput
                   id="wiz-nom-voltage"
                   className="form-input"
                   type="number"
@@ -900,7 +967,7 @@ export function SetupWizardPage() {
                 <label className="form-label" htmlFor="wiz-nom-freq">
                   {t('wizard.nominalFrequency')}
                 </label>
-                <input
+                <UiInput
                   id="wiz-nom-freq"
                   className="form-input"
                   type="number"
@@ -921,15 +988,15 @@ export function SetupWizardPage() {
           )}
 
           <div className="wizard-actions">
-            <button
+            <UiButton
               className="btn btn--secondary"
               onClick={() => setStep('map')}
               disabled={completing}
             >
               {t('wizard.back')}
-            </button>
+            </UiButton>
 
-            <button
+            <UiButton
               className="btn btn--primary"
               onClick={handleComplete}
               disabled={completing || nominalVoltage <= 0 || nominalFrequency <= 0}
@@ -942,7 +1009,7 @@ export function SetupWizardPage() {
               ) : (
                 t('wizard.completeSetup')
               )}
-            </button>
+            </UiButton>
           </div>
         </div>
       </div>
@@ -966,7 +1033,7 @@ export function SetupWizardPage() {
               <label className="form-label" htmlFor="wiz-host">
                 {t('settings.host')}
               </label>
-              <input
+              <UiInput
                 id="wiz-host"
                 className="form-input"
                 type="text"
@@ -982,7 +1049,7 @@ export function SetupWizardPage() {
               <label className="form-label" htmlFor="wiz-port">
                 {t('settings.port')}
               </label>
-              <input
+              <UiInput
                 id="wiz-port"
                 className="form-input"
                 type="number"
@@ -1002,7 +1069,7 @@ export function SetupWizardPage() {
               <label className="form-label" htmlFor="wiz-user">
                 {t('settings.username')} <span className="form-hint">{t('settings.optional', '(optional)')}</span>
               </label>
-              <input
+              <UiInput
                 id="wiz-user"
                 className="form-input"
                 type="text"
@@ -1018,7 +1085,7 @@ export function SetupWizardPage() {
               <label className="form-label" htmlFor="wiz-pass">
                 {t('settings.password')} <span className="form-hint">{t('settings.optional', '(optional)')}</span>
               </label>
-              <input
+              <UiInput
                 id="wiz-pass"
                 className="form-input"
                 type="password"
@@ -1036,7 +1103,7 @@ export function SetupWizardPage() {
             <label className="form-label" htmlFor="wiz-ups">
               {t('settings.upsName')}
             </label>
-            <input
+            <UiInput
               id="wiz-ups"
               className="form-input"
               type="text"
@@ -1068,7 +1135,7 @@ export function SetupWizardPage() {
         )}
 
         <div className="wizard-actions">
-          <button
+          <UiButton
             className="btn btn--secondary"
             onClick={handleTestConnection}
             disabled={testStatus === 'testing' || !host || !upsName}
@@ -1081,43 +1148,19 @@ export function SetupWizardPage() {
             ) : (
               t('wizard.testConnection')
             )}
-          </button>
+          </UiButton>
 
-          <button
+          <UiButton
             className="btn btn--primary"
             onClick={() => setStep('map')}
             disabled={testStatus !== 'success'}
           >
             {t('wizard.continueToMapping')}
-          </button>
+          </UiButton>
         </div>
       </div>
     </div>
   );
 }
 
-function isValidSnmpTarget(value: string): boolean {
-  if (!value) {
-    return false;
-  }
 
-  const match = value.trim().match(SNMP_TARGET_PATTERN);
-  if (!match) {
-    return false;
-  }
-
-  if (!match[1]) {
-    return true;
-  }
-
-  const port = Number(match[1]);
-  return Number.isInteger(port) && port >= 1 && port <= 65535;
-}
-
-function normalizeComPort(value: string): string | null {
-  const candidate = value.trim().toUpperCase();
-  if (!COM_PORT_PATTERN.test(candidate)) {
-    return null;
-  }
-  return candidate;
-}

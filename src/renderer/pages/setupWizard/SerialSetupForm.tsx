@@ -1,11 +1,14 @@
 import { useTranslation } from 'react-i18next';
 import {
-  Combobox,
-  ComboboxButton,
-  ComboboxInput,
-  ComboboxOption,
-  ComboboxOptions,
-} from '@headlessui/react';
+  UiButton,
+  UiCombobox,
+  UiComboboxButton,
+  UiComboboxInput,
+  UiComboboxOption,
+  UiComboboxOptions,
+  UiInput,
+  UiSelect,
+} from '../../components/ui';
 import { ChevronsUpDown, RefreshCw } from 'lucide-react';
 import type { InstallStatus } from './types';
 
@@ -34,7 +37,6 @@ export type SerialSetupFormProps = {
 export function SerialSetupForm({
   upsName,
   upsNameValid,
-  driverFilter,
   driverName,
   filteredDrivers,
   isFolderValid,
@@ -74,7 +76,7 @@ export function SerialSetupForm({
         <label className="form-label" htmlFor="wiz-serial-ups-name">
           {t('wizard.serialUpsName', 'UPS Name')}
         </label>
-        <input
+        <UiInput
           id="wiz-serial-ups-name"
           className="form-input"
           type="text"
@@ -96,7 +98,7 @@ export function SerialSetupForm({
         <label className="form-label" htmlFor="wiz-serial-driver-input">
           {t('wizard.serialDriver', 'NUT Serial Driver')}
         </label>
-        <Combobox
+        <UiCombobox
           value={driverName}
           disabled={!driverSelectionEnabled}
           onChange={(value: string | null) => {
@@ -106,7 +108,7 @@ export function SerialSetupForm({
           onClose={() => onDriverFilterChange('')}
         >
           <div className="wizard-combobox-container">
-            <ComboboxInput
+            <UiComboboxInput
               id="wiz-serial-driver-input"
               className="form-input wizard-combobox-input"
               displayValue={(value: string) => value ?? ''}
@@ -114,16 +116,16 @@ export function SerialSetupForm({
               placeholder={driverInputPlaceholder}
               disabled={!driverSelectionEnabled}
             />
-            <ComboboxButton
+            <UiComboboxButton
               className="wizard-combobox-button"
               type="button"
               aria-label={t('wizard.serialDriver', 'NUT Serial Driver')}
               disabled={!driverSelectionEnabled}
             >
               <ChevronsUpDown size={14} />
-            </ComboboxButton>
+            </UiComboboxButton>
 
-            <ComboboxOptions className="wizard-combobox-options">
+            <UiComboboxOptions className="wizard-combobox-options">
               {!driverSelectionEnabled ? (
                 <div className="wizard-combobox-empty">
                   {t('wizard.serialDriverDisabledNoFolder', 'Choose and validate a NUT folder first')}
@@ -134,18 +136,18 @@ export function SerialSetupForm({
                 </div>
               ) : (
                 filteredDrivers.map((candidateDriver) => (
-                  <ComboboxOption
+                  <UiComboboxOption
                     key={candidateDriver}
                     value={candidateDriver}
                     className="wizard-combobox-option"
                   >
                     {candidateDriver}
-                  </ComboboxOption>
+                  </UiComboboxOption>
                 ))
               )}
-            </ComboboxOptions>
+            </UiComboboxOptions>
           </div>
-        </Combobox>
+        </UiCombobox>
         <span className="form-hint">
           {t('wizard.serialDriverHint', 'Only drivers found in this NUT folder are listed.')}
         </span>
@@ -170,7 +172,7 @@ export function SerialSetupForm({
           {t('wizard.serialPort', 'COM Port')}
         </label>
         <div className="wizard-com-port-row">
-          <select
+          <UiSelect
             id="wiz-serial-port"
             className="form-input wizard-com-port-select"
             value={normalizedDriverPort ?? ''}
@@ -189,8 +191,8 @@ export function SerialSetupForm({
                 {normalizedDriverPort} ({t('wizard.notFound')})
               </option>
             )}
-          </select>
-          <button
+          </UiSelect>
+          <UiButton
             className="btn btn--secondary"
             type="button"
             onClick={onRefreshComPorts}
@@ -199,7 +201,7 @@ export function SerialSetupForm({
           >
             <RefreshCw size={14} />
             {t('wizard.serialRefreshPorts', 'Refresh')}
-          </button>
+          </UiButton>
         </div>
         {availableComPorts.length === 0 && (
           <span className="form-hint">
@@ -212,7 +214,7 @@ export function SerialSetupForm({
         <label className="form-label" htmlFor="wiz-serial-ttymode">
           {t('wizard.serialTtyMode', 'TTY Mode')}
         </label>
-        <input
+        <UiInput
           id="wiz-serial-ttymode"
           className="form-input"
           type="text"

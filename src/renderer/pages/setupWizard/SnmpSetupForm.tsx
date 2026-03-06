@@ -5,6 +5,7 @@ import type {
   SecLevel,
   SnmpVersion,
 } from './types';
+import { UiInput, UiSelect } from '../../components/ui';
 
 export type SnmpSetupFormProps = {
   upsName: string;
@@ -81,7 +82,7 @@ export function SnmpSetupForm({
         <label className="form-label" htmlFor="wiz-snmp-ups-name">
           {t('wizard.snmpUpsName', 'UPS Name')}
         </label>
-        <input
+        <UiInput
           id="wiz-snmp-ups-name"
           className="form-input"
           type="text"
@@ -103,7 +104,7 @@ export function SnmpSetupForm({
         <label className="form-label" htmlFor="wiz-snmp-target">
           {t('wizard.snmpPort', 'SNMP Target (IP or IP:port)')}
         </label>
-        <input
+        <UiInput
           id="wiz-snmp-target"
           className="form-input"
           type="text"
@@ -123,7 +124,7 @@ export function SnmpSetupForm({
           <label className="form-label" htmlFor="wiz-snmp-version">
             {t('wizard.snmpVersion', 'SNMP Version')}
           </label>
-          <select
+          <UiSelect
             id="wiz-snmp-version"
             className="form-input"
             value={snmpVersion}
@@ -132,13 +133,13 @@ export function SnmpSetupForm({
             <option value="v1">v1</option>
             <option value="v2c">v2c</option>
             <option value="v3">v3</option>
-          </select>
+          </UiSelect>
         </div>
         <div className="form-group">
           <label className="form-label" htmlFor="wiz-snmp-pollfreq">
             {t('wizard.snmpPollFreq', 'Poll Frequency (sec)')}
           </label>
-          <input
+          <UiInput
             id="wiz-snmp-pollfreq"
             className="form-input"
             type="number"
@@ -155,7 +156,7 @@ export function SnmpSetupForm({
           <label className="form-label" htmlFor="wiz-snmp-mibs">
             {t('wizard.snmpMibs', 'MIBs')}
           </label>
-          <input
+          <UiInput
             id="wiz-snmp-mibs"
             className="form-input"
             type="text"
@@ -167,7 +168,7 @@ export function SnmpSetupForm({
           <label className="form-label" htmlFor="wiz-snmp-community">
             {t('wizard.snmpCommunity', 'Community')}
           </label>
-          <input
+          <UiInput
             id="wiz-snmp-community"
             className="form-input"
             type="text"
@@ -184,7 +185,7 @@ export function SnmpSetupForm({
               <label className="form-label" htmlFor="wiz-snmp-seclevel">
                 {t('wizard.snmpSecLevel', 'Security Level')}
               </label>
-              <select
+              <UiSelect
                 id="wiz-snmp-seclevel"
                 className="form-input"
                 value={secLevel}
@@ -193,13 +194,13 @@ export function SnmpSetupForm({
                 <option value="noAuthNoPriv">noAuthNoPriv</option>
                 <option value="authNoPriv">authNoPriv</option>
                 <option value="authPriv">authPriv</option>
-              </select>
+              </UiSelect>
             </div>
             <div className="form-group">
               <label className="form-label" htmlFor="wiz-snmp-secname">
                 {t('wizard.snmpSecName', 'Security Name')}
               </label>
-              <input
+              <UiInput
                 id="wiz-snmp-secname"
                 className="form-input"
                 type="text"
@@ -215,7 +216,7 @@ export function SnmpSetupForm({
                 <label className="form-label" htmlFor="wiz-snmp-auth-proto">
                   {t('wizard.snmpAuthProtocol', 'Auth Protocol')}
                 </label>
-                <select
+                <UiSelect
                   id="wiz-snmp-auth-proto"
                   className="form-input"
                   value={authProtocol}
@@ -223,13 +224,13 @@ export function SnmpSetupForm({
                 >
                   <option value="MD5">MD5</option>
                   <option value="SHA">SHA</option>
-                </select>
+                </UiSelect>
               </div>
               <div className="form-group">
                 <label className="form-label" htmlFor="wiz-snmp-auth-pass">
                   {t('wizard.snmpAuthPassword', 'Auth Password')}
                 </label>
-                <input
+                <UiInput
                   id="wiz-snmp-auth-pass"
                   className="form-input"
                   type="password"
@@ -246,7 +247,7 @@ export function SnmpSetupForm({
                 <label className="form-label" htmlFor="wiz-snmp-priv-proto">
                   {t('wizard.snmpPrivProtocol', 'Priv Protocol')}
                 </label>
-                <select
+                <UiSelect
                   id="wiz-snmp-priv-proto"
                   className="form-input"
                   value={privProtocol}
@@ -254,13 +255,13 @@ export function SnmpSetupForm({
                 >
                   <option value="DES">DES</option>
                   <option value="AES">AES</option>
-                </select>
+                </UiSelect>
               </div>
               <div className="form-group">
                 <label className="form-label" htmlFor="wiz-snmp-priv-pass">
                   {t('wizard.snmpPrivPassword', 'Priv Password')}
                 </label>
-                <input
+                <UiInput
                   id="wiz-snmp-priv-pass"
                   className="form-input"
                   type="password"

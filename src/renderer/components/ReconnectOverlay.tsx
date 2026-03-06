@@ -3,6 +3,7 @@ import { Transition } from '@headlessui/react';
 import { useTranslation } from 'react-i18next';
 import { useNavigate } from 'react-router-dom';
 import { useConnection, useAppConfig } from '../app/providers';
+import { UiButton, UiDialog, UiDialogPanel, UiDialogTitle } from './ui';
 
 export function ReconnectOverlay() {
     const { t } = useTranslation();
@@ -231,20 +232,21 @@ export function ReconnectOverlay() {
                 </div>
 
                 {shouldShowDriverIssueDialog && localDriverLaunchIssue && (
-                    <div
+                    <UiDialog
+                        as="div"
+                        open={shouldShowDriverIssueDialog}
+                        onClose={() => { /* No-op: explicit action buttons drive this flow */ }}
                         className="driver-launch-issue-layer"
-                        role="dialog"
-                        aria-modal="true"
-                        aria-labelledby="driver-launch-issue-title"
                     >
-                        <div className="driver-launch-issue-card">
+                        <UiDialogPanel className="driver-launch-issue-card">
                             <div className="driver-launch-issue-header">
-                                <h3
+                                <UiDialogTitle
+                                    as="h3"
                                     id="driver-launch-issue-title"
                                     className="driver-launch-issue-title"
                                 >
                                     {t('reconnect.driverLogTitle', 'Driver startup failed')}
-                                </h3>
+                                </UiDialogTitle>
                                 <p className="driver-launch-issue-summary">{issueSummary}</p>
                                 <div className="driver-launch-issue-meta">
                                     <span className="driver-launch-issue-code">
@@ -273,15 +275,15 @@ export function ReconnectOverlay() {
                             </div>
 
                             <div className="driver-launch-issue-actions">
-                                <button
+                                <UiButton
                                     type="button"
                                     className="btn btn--secondary"
                                     onClick={() => navigate('/wizard')}
                                 >
                                     {t('reconnect.driverLogReconfigure', 'Re-configure')}
-                                </button>
+                                </UiButton>
                                 <div className="driver-launch-issue-actions-right">
-                                    <button
+                                    <UiButton
                                         type="button"
                                         className="btn btn--secondary"
                                         onClick={handleRescan}
@@ -290,8 +292,8 @@ export function ReconnectOverlay() {
                                         {rescanState === 'scanning'
                                             ? t('reconnect.driverLogRescanning', 'Rescanning...')
                                             : t('reconnect.driverLogRescan', 'Rescan')}
-                                    </button>
-                                    <button
+                                    </UiButton>
+                                    <UiButton
                                         type="button"
                                         className="btn btn--primary"
                                         onClick={handleContinue}
@@ -300,11 +302,11 @@ export function ReconnectOverlay() {
                                         {continuing
                                             ? t('reconnect.driverLogContinuing', 'Continuing...')
                                             : t('reconnect.driverLogContinue', 'Continue')}
-                                    </button>
+                                    </UiButton>
                                 </div>
                             </div>
-                        </div>
-                    </div>
+                        </UiDialogPanel>
+                    </UiDialog>
                 )}
             </div>
         </Transition>

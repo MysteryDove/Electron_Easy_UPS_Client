@@ -15,7 +15,11 @@
     "make:nsis": "electron-builder --prepackaged \"out/Easy UPS Client-win32-x64\" --win nsis --x64 --publish never",
     "make:nsis:full": "npm run package:win && npm run make:nsis",
     "publish": "electron-forge publish",
-    "lint": "eslint ."
+    "lint": "eslint .",
+    "test": "vitest run",
+    "test:watch": "vitest",
+    "test:coverage": "vitest run --coverage",
+    "test:e2e": "playwright test"
   },
   "keywords": [],
   "author": {
@@ -33,18 +37,23 @@
     "@electron-forge/plugin-vite": "^7.11.1",
     "@electron/fuses": "^1.8.0",
     "@headlessui/react": "^2.2.9",
+    "@playwright/test": "^1.58.2",
     "@tailwindcss/vite": "^4.2.0",
+    "@testing-library/jest-dom": "^6.9.1",
+    "@testing-library/react": "^16.3.2",
     "@types/react": "^19.2.14",
     "@types/react-dom": "^19.2.3",
     "@typescript-eslint/eslint-plugin": "^8.56.0",
     "@typescript-eslint/parser": "^8.56.0",
     "@vitejs/plugin-react": "^5.1.4",
+    "@vitest/coverage-v8": "^4.0.18",
     "echarts": "^6.0.0",
     "echarts-for-react": "^3.0.6",
     "electron": "40.6.0",
     "electron-builder": "^26.8.1",
     "eslint": "^9.31.0",
     "eslint-plugin-import": "^2.32.0",
+    "jsdom": "^28.1.0",
     "lucide-react": "^0.575.0",
     "react": "^19.2.4",
     "react-dom": "^19.2.4",
@@ -52,7 +61,8 @@
     "react-router-dom": "^7.13.0",
     "tailwindcss": "^4.2.0",
     "typescript": "~5.9.3",
-    "vite": "^7.3.1"
+    "vite": "^7.3.1",
+    "vitest": "^4.0.18"
   },
   "dependencies": {
     "@duckdb/node-api": "^1.4.4-r.1",

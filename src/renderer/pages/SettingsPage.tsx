@@ -4,6 +4,7 @@ import { useAppConfig } from '../app/providers';
 import { Sun, Moon, Monitor, CheckCircle2, XCircle, Plug } from 'lucide-react';
 import { useNavigate } from 'react-router-dom';
 import { createPortal } from 'react-dom';
+import { UiButton, UiCheckbox, UiInput, UiSelect } from '../components/ui';
 
 type ShutdownMethod = 'sleep' | 'shutdown';
 type ThemeMode = 'light' | 'dark' | 'system';
@@ -271,14 +272,14 @@ export function SettingsPage() {
                         <p className="form-hint" style={{ marginBottom: '16px' }}>
                             {t('settings.connectionDescription', 'Launch the setup wizard to reconfigure the NUT server address, port, and authentication details.')}
                         </p>
-                        <button
+                        <UiButton
                             type="button"
                             className="btn btn--secondary"
                             onClick={() => navigate('/wizard')}
                         >
                             <Plug size={18} style={{ marginRight: '8px', display: 'inline-block', verticalAlign: 'middle' }} />
                             <span style={{ display: 'inline-block', verticalAlign: 'middle' }}>{t('settings.reconfigureConnection', 'Reconfigure connection...')}</span>
-                        </button>
+                        </UiButton>
                     </div>
                 </section>
 
@@ -291,7 +292,7 @@ export function SettingsPage() {
                                 {t('settings.pollInterval')}
                             </label>
                             <div className="form-range-row">
-                                <input
+                                <UiInput
                                     id="set-interval"
                                     className="form-range"
                                     type="range"
@@ -321,7 +322,7 @@ export function SettingsPage() {
                             <label className="form-label" htmlFor="set-retention">
                                 {t('settings.retainDataDays')}
                             </label>
-                            <input
+                            <UiInput
                                 id="set-retention"
                                 className="form-input form-input--narrow"
                                 type="number"
@@ -344,7 +345,7 @@ export function SettingsPage() {
                                 <label className="form-label" htmlFor="set-nominal-voltage">
                                     {t('settings.nominalVoltage')}
                                 </label>
-                                <input
+                                <UiInput
                                     id="set-nominal-voltage"
                                     className="form-input form-input--narrow"
                                     type="number"
@@ -359,7 +360,7 @@ export function SettingsPage() {
                                 <label className="form-label" htmlFor="set-nominal-freq">
                                     {t('settings.nominalFrequency')}
                                 </label>
-                                <input
+                                <UiInput
                                     id="set-nominal-freq"
                                     className="form-input form-input--narrow"
                                     type="number"
@@ -377,7 +378,7 @@ export function SettingsPage() {
                                 <label className="form-label" htmlFor="set-volt-tol-pos">
                                     {t('settings.voltageTolPos', 'Voltage +Tolerance %')}
                                 </label>
-                                <input
+                                <UiInput
                                     id="set-volt-tol-pos"
                                     className="form-input form-input--narrow"
                                     type="number"
@@ -393,7 +394,7 @@ export function SettingsPage() {
                                 <label className="form-label" htmlFor="set-volt-tol-neg">
                                     {t('settings.voltageTolNeg', 'Voltage −Tolerance %')}
                                 </label>
-                                <input
+                                <UiInput
                                     id="set-volt-tol-neg"
                                     className="form-input form-input--narrow"
                                     type="number"
@@ -412,7 +413,7 @@ export function SettingsPage() {
                                 <label className="form-label" htmlFor="set-freq-tol-pos">
                                     {t('settings.freqTolPos', 'Frequency +Tolerance %')}
                                 </label>
-                                <input
+                                <UiInput
                                     id="set-freq-tol-pos"
                                     className="form-input form-input--narrow"
                                     type="number"
@@ -428,7 +429,7 @@ export function SettingsPage() {
                                 <label className="form-label" htmlFor="set-freq-tol-neg">
                                     {t('settings.freqTolNeg', 'Frequency −Tolerance %')}
                                 </label>
-                                <input
+                                <UiInput
                                     id="set-freq-tol-neg"
                                     className="form-input form-input--narrow"
                                     type="number"
@@ -448,8 +449,7 @@ export function SettingsPage() {
 
                         <div className="form-row form-row--two" style={{ marginTop: 12 }}>
                             <label className="form-toggle">
-                                <input
-                                    type="checkbox"
+                                <UiCheckbox
                                     checked={lineAlertEnabled}
                                     onChange={(e) => {
                                         const checked = e.target.checked;
@@ -463,7 +463,7 @@ export function SettingsPage() {
                                 <label className="form-label" htmlFor="set-alert-cooldown">
                                     {t('settings.alertCooldown')}
                                 </label>
-                                <input
+                                <UiInput
                                     id="set-alert-cooldown"
                                     className="form-input form-input--narrow"
                                     type="number"
@@ -487,7 +487,7 @@ export function SettingsPage() {
                                 <label className="form-label" htmlFor="set-warn-pct">
                                     {t('settings.warningPct')}
                                 </label>
-                                <input
+                                <UiInput
                                     id="set-warn-pct"
                                     className="form-input form-input--narrow"
                                     type="number"
@@ -502,7 +502,7 @@ export function SettingsPage() {
                                 <label className="form-label" htmlFor="set-shut-pct">
                                     {t('settings.shutdownPct')}
                                 </label>
-                                <input
+                                <UiInput
                                     id="set-shut-pct"
                                     className="form-input form-input--narrow"
                                     type="number"
@@ -516,8 +516,7 @@ export function SettingsPage() {
                         </div>
                         <div className="form-row form-row--two">
                             <label className="form-toggle">
-                                <input
-                                    type="checkbox"
+                                <UiCheckbox
                                     checked={warningToastEnabled}
                                     onChange={(e) => {
                                         const checked = e.target.checked;
@@ -528,8 +527,7 @@ export function SettingsPage() {
                                 <span className="form-toggle-label">{t('settings.enableWarningToasts')}</span>
                             </label>
                             <label className="form-toggle">
-                                <input
-                                    type="checkbox"
+                                <UiCheckbox
                                     checked={shutdownEnabled}
                                     onChange={(e) => {
                                         const checked = e.target.checked;
@@ -547,7 +545,7 @@ export function SettingsPage() {
                                 <label className="form-label" htmlFor="shutdownMethod">
                                     {t('settings.autoShutdownMethod')}
                                 </label>
-                                <select
+                                <UiSelect
                                     id="shutdownMethod"
                                     className="telemetry-select"
                                     value={shutdownMethod}
@@ -561,13 +559,13 @@ export function SettingsPage() {
                                 >
                                     <option value="sleep">{t('settings.shutdownMethodSleep')}</option>
                                     <option value="shutdown">{t('settings.shutdownMethodFull')}</option>
-                                </select>
+                                </UiSelect>
                             </div>
                             <div className="form-group" style={{ flex: 1 }}>
                                 <label className="form-label" htmlFor="set-shutdown-countdown">
                                     {t('settings.shutdownDelay')}
                                 </label>
-                                <input
+                                <UiInput
                                     id="set-shutdown-countdown"
                                     className="form-input"
                                     type="number"
@@ -582,8 +580,7 @@ export function SettingsPage() {
                         </div>
                         <div className="form-row form-row--two" style={{ marginTop: 8 }}>
                             <label className="form-toggle">
-                                <input
-                                    type="checkbox"
+                                <UiCheckbox
                                     checked={criticalAlertEnabled}
                                     onChange={(e) => {
                                         const checked = e.target.checked;
@@ -594,8 +591,7 @@ export function SettingsPage() {
                                 <span className="form-toggle-label">{t('settings.warningOverlay')}</span>
                             </label>
                             <label className="form-toggle">
-                                <input
-                                    type="checkbox"
+                                <UiCheckbox
                                     checked={criticalShutdownAlertEnabled}
                                     onChange={(e) => {
                                         const checked = e.target.checked;
@@ -615,8 +611,7 @@ export function SettingsPage() {
                     <h2 className="settings-section-title">{t('settings.startup')}</h2>
                     <div className="settings-section-body">
                         <label className="form-toggle">
-                            <input
-                                type="checkbox"
+                            <UiCheckbox
                                 checked={startWithWindows}
                                 onChange={(e) => {
                                     const checked = e.target.checked;
@@ -639,7 +634,7 @@ export function SettingsPage() {
                             </label>
                             <div className="theme-selector">
                                 {(['light', 'dark', 'system'] as const).map((mode) => (
-                                    <button
+                                    <UiButton
                                         key={mode}
                                         type="button"
                                         className={`theme-btn ${themeMode === mode ? 'theme-btn--active' : ''}`}
@@ -650,7 +645,7 @@ export function SettingsPage() {
                                     >
                                         {mode === 'light' ? <Sun size={18} /> : mode === 'dark' ? <Moon size={18} /> : <Monitor size={18} />}
                                         <span>{mode.charAt(0).toUpperCase() + mode.slice(1)}</span>
-                                    </button>
+                                    </UiButton>
                                 ))}
                             </div>
                         </div>
@@ -658,7 +653,7 @@ export function SettingsPage() {
                             <label className="form-label" htmlFor="set-language">
                                 {t('settings.language')}
                             </label>
-                            <select
+                            <UiSelect
                                 id="set-language"
                                 className="telemetry-select"
                                 value={locale}
@@ -672,7 +667,7 @@ export function SettingsPage() {
                                 <option value="system">{t('settings.system')}</option>
                                 <option value="en">{t('settings.en')}</option>
                                 <option value="zh">{t('settings.zh')}</option>
-                            </select>
+                            </UiSelect>
                         </div>
                     </div>
                 </section>

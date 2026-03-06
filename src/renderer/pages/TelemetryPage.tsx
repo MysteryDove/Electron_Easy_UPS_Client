@@ -4,6 +4,7 @@ import { useConnection } from '../app/providers';
 import type { TelemetryDataPoint } from '../../main/db/telemetryRepository';
 import { TelemetryRowCard } from '../components/TelemetryRowCard';
 import type { TelemetryColumn } from '../../main/nut/nutValueMapper';
+import { UiSelect } from '../components/ui';
 
 // Define the timeline options
 type TimeScale = '10 Minutes' | '30 Minutes' | '1 Hour' | '3 Hours' | '12 Hours' | '1 Day' | '3 Days';
@@ -135,7 +136,7 @@ export function TelemetryPage() {
                 </div>
 
                 <div className="telemetry-controls">
-                    <select
+                    <UiSelect
                         value={timeScale}
                         onChange={(e) => setTimeScale(e.target.value as TimeScale)}
                         className="telemetry-select"
@@ -144,7 +145,7 @@ export function TelemetryPage() {
                         {(Object.keys(TIME_SCALE_MS) as TimeScale[]).map(scale => (
                             <option key={scale} value={scale}>{t(`telemetry.timeScale.${scale.replace(' ', '')}`)}</option>
                         ))}
-                    </select>
+                    </UiSelect>
                 </div>
             </header>
 

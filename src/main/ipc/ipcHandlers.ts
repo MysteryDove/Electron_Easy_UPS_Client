@@ -27,18 +27,28 @@ import {
   waitForSerialDriverReady,
 } from '../nut/nutSetupService';
 import {
+  normalizeNutSetupListSerialDriversPayload,
+  normalizeNutSetupPrepareDriverPayload,
+  normalizeNutSetupPreparePayload,
+  normalizeNutSetupPrepareUsbHidPayload,
+  normalizeNutSetupValidatePayload,
+  normalizeSystemOpenExternalPayload,
+} from './normalizers/nutSetupNormalizers';
+import {
+  buildTechnicalDetails,
+  classifySerialDriverFailure,
+} from '../nut/serialFailureClassifier';
+import {
+  buildUsbHidTechnicalDetails,
+  hasNoMatchingUsbHidUpsSignal,
+} from '../../shared/wizard/usbHidErrors';
+import {
   IPC_CHANNELS,
   IPC_EVENTS,
-  type NutSetupListSerialDriversPayload,
-  type NutSetupPrepareLocalDriverPayload,
   type NutSetupPrepareLocalDriverResult,
-  type NutSetupPrepareUsbHidPayload,
-  type SystemOpenExternalPayload,
   type WizardTestConnectionPayload,
   type WizardTestConnectionResult,
   type WizardCompletePayload,
-  type NutSetupValidateFolderPayload,
-  type NutSetupPrepareLocalNutPayload,
 } from './ipcChannels';
 
 let isRegistered = false;
@@ -205,7 +215,12 @@ export function registerIpcHandlers(dependencies: IpcHandlerDependencies): void 
       const normalizedPayload = normalizeNutSetupPreparePayload(payload);
       const prepareResult = await prepareLocalNut(normalizedPayload);
       if (!prepareResult.success) {
-        return prepareResult;
+        return {
+          ...prepareResult,
+          technicalDetails:
+            prepareResult.technicalDetails ??
+            buildTechnicalDetails(prepareResult.error ?? ''),
+        };
       }
 
       try {
@@ -215,9 +230,15 @@ export function registerIpcHandlers(dependencies: IpcHandlerDependencies): void 
         );
         return prepareResult;
       } catch (error) {
+        const rawMessage = error instanceof Error ? error.message : String(error);
+        const firstLine = rawMessage
+          .split(/\r?\n/u)
+          .map((line) => line.trim())
+          .find((line) => line.length > 0);
         return {
           success: false,
-          error: error instanceof Error ? error.message : String(error),
+          error: firstLine ?? 'Failed to configure and start local NUT',
+          technicalDetails: buildTechnicalDetails(rawMessage),
         };
       }
     },
@@ -282,9 +303,26 @@ export function registerIpcHandlers(dependencies: IpcHandlerDependencies): void 
         );
         return prepareResult;
       } catch (error) {
+        const rawMessage = error instanceof Error ? error.message : String(error);
+        if (hasNoMatchingUsbHidUpsSignal(rawMessage)) {
+          return {
+            success: false,
+            error:
+              'No matching HID UPS found. Check USB connection and optional VID/PID settings, then retry.',
+            technicalDetails: buildUsbHidTechnicalDetails(rawMessage),
+          };
+        }
+
+        const firstLine = rawMessage
+          .split(/\r?\n/u)
+          .map((line) => line.trim())
+          .find((line) => line.length > 0);
         return {
           success: false,
-          error: error instanceof Error ? error.message : String(error),
+          error:
+            firstLine ??
+            'Failed to configure and start local NUT USB HID driver',
+          technicalDetails: buildUsbHidTechnicalDetails(rawMessage),
         };
       }
     },
@@ -480,334 +518,6 @@ function normalizeWizardCompletePayload(
   }
 
   return result;
-}
-
-function normalizeNutSetupValidatePayload(
-  payload: unknown,
-): NutSetupValidateFolderPayload {
-  if (typeof payload !== 'object' || payload === null) {
-    throw new Error('NUT setup validate payload must be an object');
-  }
-
-  const candidate = payload as {
-    folderPath?: unknown;
-    requireUsbHidExperimentalSupport?: unknown;
-  };
-  if (typeof candidate.folderPath !== 'string' || !candidate.folderPath.trim()) {
-    throw new Error('folderPath is required');
-  }
-
-  const normalizedPayload: NutSetupValidateFolderPayload = {
-    folderPath: candidate.folderPath,
-  };
-
-  if (typeof candidate.requireUsbHidExperimentalSupport === 'boolean') {
-    normalizedPayload.requireUsbHidExperimentalSupport =
-      candidate.requireUsbHidExperimentalSupport;
-  }
-
-  return normalizedPayload;
-}
-
-function normalizeNutSetupListSerialDriversPayload(
-  payload: unknown,
-): NutSetupListSerialDriversPayload {
-  if (typeof payload !== 'object' || payload === null) {
-    throw new Error('NUT setup list-serial-drivers payload must be an object');
-  }
-
-  const candidate = payload as { folderPath?: unknown };
-  if (typeof candidate.folderPath !== 'string' || !candidate.folderPath.trim()) {
-    throw new Error('folderPath is required');
-  }
-
-  return { folderPath: candidate.folderPath };
-}
-
-function normalizeNutSetupPreparePayload(
-  payload: unknown,
-): NutSetupPrepareLocalNutPayload {
-  if (typeof payload !== 'object' || payload === null) {
-    throw new Error('NUT setup prepare payload must be an object');
-  }
-
-  const candidate = payload as Record<string, unknown>;
-  const requiredStringFields: Array<keyof NutSetupPrepareLocalNutPayload> = [
-    'folderPath',
-    'upsName',
-    'port',
-    'mibs',
-    'community',
-  ];
-
-  for (const field of requiredStringFields) {
-    if (typeof candidate[field] !== 'string' || !(candidate[field] as string).trim()) {
-      throw new Error(`${field} is required`);
-    }
-  }
-
-  if (
-    candidate.snmpVersion !== 'v1' &&
-    candidate.snmpVersion !== 'v2c' &&
-    candidate.snmpVersion !== 'v3'
-  ) {
-    throw new Error('snmpVersion must be v1, v2c, or v3');
-  }
-
-  if (typeof candidate.pollfreq !== 'number') {
-    throw new Error('pollfreq is required');
-  }
-
-  const result: NutSetupPrepareLocalNutPayload = {
-    folderPath: candidate.folderPath as string,
-    upsName: candidate.upsName as string,
-    port: candidate.port as string,
-    snmpVersion: candidate.snmpVersion,
-    mibs: candidate.mibs as string,
-    community: candidate.community as string,
-    pollfreq: candidate.pollfreq,
-  };
-
-  if (
-    candidate.secLevel === 'noAuthNoPriv' ||
-    candidate.secLevel === 'authNoPriv' ||
-    candidate.secLevel === 'authPriv'
-  ) {
-    result.secLevel = candidate.secLevel;
-  }
-
-  if (typeof candidate.secName === 'string') {
-    result.secName = candidate.secName;
-  }
-
-  if (candidate.authProtocol === 'MD5' || candidate.authProtocol === 'SHA') {
-    result.authProtocol = candidate.authProtocol;
-  }
-
-  if (typeof candidate.authPassword === 'string') {
-    result.authPassword = candidate.authPassword;
-  }
-
-  if (candidate.privProtocol === 'DES' || candidate.privProtocol === 'AES') {
-    result.privProtocol = candidate.privProtocol;
-  }
-
-  if (typeof candidate.privPassword === 'string') {
-    result.privPassword = candidate.privPassword;
-  }
-
-  return result;
-}
-
-function normalizeNutSetupPrepareDriverPayload(
-  payload: unknown,
-): NutSetupPrepareLocalDriverPayload {
-  if (typeof payload !== 'object' || payload === null) {
-    throw new Error('NUT setup prepare-driver payload must be an object');
-  }
-
-  const candidate = payload as Record<string, unknown>;
-  const requiredStringFields: Array<keyof NutSetupPrepareLocalDriverPayload> = [
-    'folderPath',
-    'upsName',
-    'driver',
-    'port',
-  ];
-
-  for (const field of requiredStringFields) {
-    if (typeof candidate[field] !== 'string' || !(candidate[field] as string).trim()) {
-      throw new Error(`${field} is required`);
-    }
-  }
-
-  const result: NutSetupPrepareLocalDriverPayload = {
-    folderPath: candidate.folderPath as string,
-    upsName: candidate.upsName as string,
-    driver: candidate.driver as string,
-    port: candidate.port as string,
-  };
-
-  if (typeof candidate.ttymode === 'string' && candidate.ttymode.trim()) {
-    result.ttymode = candidate.ttymode;
-  }
-
-  return result;
-}
-
-function normalizeNutSetupPrepareUsbHidPayload(
-  payload: unknown,
-): NutSetupPrepareUsbHidPayload {
-  if (typeof payload !== 'object' || payload === null) {
-    throw new Error('NUT setup prepare-usbhid payload must be an object');
-  }
-
-  const candidate = payload as Record<string, unknown>;
-  const requiredStringFields: Array<keyof NutSetupPrepareUsbHidPayload> = [
-    'folderPath',
-    'upsName',
-    'port',
-  ];
-
-  for (const field of requiredStringFields) {
-    if (typeof candidate[field] !== 'string' || !(candidate[field] as string).trim()) {
-      throw new Error(`${field} is required`);
-    }
-  }
-
-  const result: NutSetupPrepareUsbHidPayload = {
-    folderPath: candidate.folderPath as string,
-    upsName: candidate.upsName as string,
-    port: candidate.port as string,
-  };
-
-  if (typeof candidate.vendorid === 'string' && candidate.vendorid.trim()) {
-    result.vendorid = candidate.vendorid;
-  }
-
-  if (typeof candidate.productid === 'string' && candidate.productid.trim()) {
-    result.productid = candidate.productid;
-  }
-
-  return result;
-}
-
-function normalizeSystemOpenExternalPayload(
-  payload: unknown,
-): SystemOpenExternalPayload {
-  if (typeof payload !== 'object' || payload === null) {
-    throw new Error('System open-external payload must be an object');
-  }
-
-  const candidate = payload as Record<string, unknown>;
-  if (typeof candidate.url !== 'string' || !candidate.url.trim()) {
-    throw new Error('url is required');
-  }
-
-  let parsedUrl: URL;
-  try {
-    parsedUrl = new URL(candidate.url);
-  } catch {
-    throw new Error('url must be a valid absolute URL');
-  }
-
-  const protocol = parsedUrl.protocol.toLowerCase();
-  if (protocol !== 'http:' && protocol !== 'https:') {
-    throw new Error('Only http(s) URLs are allowed');
-  }
-
-  return { url: parsedUrl.toString() };
-}
-
-async function classifySerialDriverFailure(
-  payload: NutSetupPrepareLocalDriverPayload,
-  error: unknown,
-): Promise<NutSetupPrepareLocalDriverResult> {
-  const rawMessage = error instanceof Error ? error.message : String(error);
-  const technicalDetails = buildTechnicalDetails(rawMessage);
-  const selectedPort = normalizeComPortToken(payload.port);
-  const normalizedMessage = rawMessage.toLowerCase();
-  const mentionsSelectedPort = selectedPort
-    ? normalizedMessage.includes(selectedPort.toLowerCase())
-    : false;
-  const hasPortOpenFailure = /(?:unable|failed)\s+to\s+open\s+com\d+/iu.test(rawMessage) ||
-    /cannot\s+open\s+com\d+/iu.test(rawMessage);
-  const hasAccessDeniedHint = /operation not permitted|access is denied|permission denied|device or resource busy|resource busy|port is busy|in use/iu.test(rawMessage);
-
-  if (
-    (hasPortOpenFailure && hasAccessDeniedHint) ||
-    (mentionsSelectedPort && hasAccessDeniedHint)
-  ) {
-    return {
-      success: false,
-      errorCode: 'SERIAL_COM_PORT_ACCESS',
-      error: selectedPort
-        ? `Unable to open ${selectedPort}. The port is in use or access is denied. Close other serial applications and try again.`
-        : 'Unable to open the selected COM port. The port is in use or access is denied. Close other serial applications and try again.',
-      technicalDetails,
-    };
-  }
-
-  if (/timed out waiting for serial driver initialization/iu.test(rawMessage)) {
-    const portExists = selectedPort
-      ? await detectComPortPresence(selectedPort)
-      : null;
-
-    if (selectedPort && portExists === false) {
-      return {
-        success: false,
-        errorCode: 'SERIAL_COM_PORT_MISSING',
-        error: `${selectedPort} is no longer available. Reconnect the UPS serial cable, verify the COM port, and try again.`,
-        technicalDetails,
-      };
-    }
-
-    return {
-      success: false,
-      errorCode: 'SERIAL_DRIVER_INIT_TIMEOUT',
-      error: 'The serial driver started, but UPS status did not become ready in time. Verify the COM port, cable, and driver compatibility.',
-      technicalDetails,
-    };
-  }
-
-  if (selectedPort) {
-    const portExists = await detectComPortPresence(selectedPort);
-    if (portExists === false) {
-      return {
-        success: false,
-        errorCode: 'SERIAL_COM_PORT_MISSING',
-        error: `${selectedPort} is not currently available. Reconnect the UPS serial cable, refresh COM ports, and try again.`,
-        technicalDetails,
-      };
-    }
-  }
-
-  if (hasPortOpenFailure) {
-    return {
-      success: false,
-      errorCode: 'SERIAL_COM_PORT_ACCESS',
-      error: selectedPort
-        ? `Unable to open ${selectedPort}. Check whether the port is in use or blocked by permissions.`
-        : 'Unable to open the selected COM port. Check whether the port is in use or blocked by permissions.',
-      technicalDetails,
-    };
-  }
-
-  return {
-    success: false,
-    errorCode: 'SERIAL_DRIVER_STARTUP_FAILED',
-    error: rawMessage || 'Failed to configure and start local NUT serial driver',
-    technicalDetails,
-  };
-}
-
-function normalizeComPortToken(value: string): string | null {
-  const trimmed = value.trim().toUpperCase();
-  if (!/^COM\d+$/u.test(trimmed)) {
-    return null;
-  }
-  return trimmed;
-}
-
-async function detectComPortPresence(port: string): Promise<boolean | null> {
-  try {
-    const ports = await listComPorts();
-    return ports.ports.includes(port);
-  } catch {
-    return null;
-  }
-}
-
-function buildTechnicalDetails(rawMessage: string): string | undefined {
-  const message = rawMessage.trim();
-  if (!message) {
-    return undefined;
-  }
-
-  if (message.length <= 8000) {
-    return message;
-  }
-
-  return `${message.slice(0, 8000)}\n...[truncated]`;
 }
 
 // ---------------------------------------------------------------------------

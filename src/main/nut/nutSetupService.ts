@@ -1,7 +1,5 @@
-﻿import { execFile, execSync } from 'node:child_process';
-import { accessSync, constants as fsConstants } from 'node:fs';
+﻿import { execFile } from 'node:child_process';
 import fs from 'node:fs/promises';
-import os from 'node:os';
 import path from 'node:path';
 import { promisify } from 'node:util';
 import type {
@@ -13,10 +11,19 @@ import type {
   NutSetupPrepareLocalNutResult,
   NutSetupPrepareUsbHidPayload,
   NutSetupPrepareUsbHidResult,
+  NutSetupUsbHidExperimentalIssueCode,
   NutSetupValidateFolderResult,
 } from '../ipc/ipcChannels';
+import {
+  isValidSnmpTarget,
+  isValidUpsName,
+  isValidUsbDeviceId,
+  normalizeComPort,
+} from '../../shared/wizard/validation';
+import { getNutPlatformAdapter } from './platform/NutPlatformAdapter';
 
 const execFileAsync = promisify(execFile);
+const platformAdapter = getNutPlatformAdapter();
 
 const REQUIRED_DIRS = ['etc', 'lib', 'include', 'bin', 'sbin'];
 const REQUIRED_FILES = ['sbin/upsd.exe', 'bin/nut.exe'];
@@ -76,13 +83,6 @@ const SERIAL_DRIVERS = [
   'victronups',
 ] as const;
 
-const UPS_NAME_PATTERN = /^[a-zA-Z0-9-]+$/;
-const IPV4_OCTET_PATTERN = '(?:25[0-5]|2[0-4]\\d|1\\d\\d|[1-9]?\\d)';
-const SNMP_TARGET_PATTERN = new RegExp(
-  `^${IPV4_OCTET_PATTERN}(?:\\.${IPV4_OCTET_PATTERN}){3}(?::([1-9]\\d{0,4}))?$`,
-);
-const COM_PORT_PATTERN = /^COM\d+$/i;
-const USB_DEVICE_ID_PATTERN = /^[0-9a-f]{4}$/i;
 const SERIAL_DRIVER_SET = new Set<string>(SERIAL_DRIVERS);
 const SERIAL_DRIVER_READY_TIMEOUT_MS = 45 * 1000;
 const SERIAL_DRIVER_READY_POLL_INTERVAL_MS = 1000;
@@ -103,6 +103,9 @@ export async function validateNutFolder(
   const normalizedFolder = folderPath.trim();
   let usbHidExperimentalSupport: boolean | undefined;
   let usbHidExperimentalMessage: string | undefined;
+  let usbHidExperimentalIssueCode:
+    | NutSetupUsbHidExperimentalIssueCode
+    | undefined;
 
   if (!normalizedFolder) {
     const expectedEntries = [
@@ -121,6 +124,7 @@ export async function validateNutFolder(
 
     if (requireUsbHidExperimentalSupport) {
       usbHidExperimentalSupport = false;
+      usbHidExperimentalIssueCode = 'FOLDER_EMPTY';
       usbHidExperimentalMessage =
         'Folder path is empty. Select the extracted experimental NUT build folder.';
     }
@@ -133,6 +137,7 @@ export async function validateNutFolder(
         ? {
           usbHidExperimentalSupport,
           usbHidExperimentalMessage,
+          usbHidExperimentalIssueCode,
         }
         : {}),
     };
@@ -170,6 +175,7 @@ export async function validateNutFolder(
 
     if (requireUsbHidExperimentalSupport) {
       usbHidExperimentalSupport = false;
+      usbHidExperimentalIssueCode = 'FOLDER_INCOMPLETE';
       usbHidExperimentalMessage =
         'NUT folder structure is incomplete. Make sure the extracted folder contains the required files.';
     }
@@ -182,6 +188,7 @@ export async function validateNutFolder(
         ? {
           usbHidExperimentalSupport,
           usbHidExperimentalMessage,
+          usbHidExperimentalIssueCode,
         }
         : {}),
     };
@@ -191,6 +198,7 @@ export async function validateNutFolder(
     const checkResult = await verifyUsbHidExperimentalSupport(normalizedFolder);
     usbHidExperimentalSupport = checkResult.supported;
     usbHidExperimentalMessage = checkResult.message;
+    usbHidExperimentalIssueCode = checkResult.issueCode;
 
     if (!checkResult.supported) {
       missing.push(
@@ -209,11 +217,12 @@ export async function validateNutFolder(
         writable: false,
         usbHidExperimentalSupport,
         usbHidExperimentalMessage,
+        usbHidExperimentalIssueCode,
       };
     }
   }
 
-  const writable = await isNutFolderWritable(normalizedFolder);
+  const writable = await platformAdapter.isNutFolderWritable(normalizedFolder);
   if (!writable) {
     console.warn(
       '[nutSetupService] validateNutFolder failed: folder is not writable',
@@ -229,6 +238,7 @@ export async function validateNutFolder(
       ? {
         usbHidExperimentalSupport,
         usbHidExperimentalMessage,
+        usbHidExperimentalIssueCode,
       }
       : {}),
   };
@@ -299,22 +309,8 @@ export async function listSerialDrivers(
 }
 
 export async function listComPorts(): Promise<NutSetupListComPortsResult> {
-  if (process.platform !== 'win32') {
-    return { ports: [] };
-  }
-
-  const script = '[System.IO.Ports.SerialPort]::GetPortNames()';
-  const { stdout } = await execFileAsync(
-    'powershell.exe',
-    ['-NoProfile', '-WindowStyle', 'Hidden', '-Command', script],
-    {
-      windowsHide: true,
-      timeout: 10 * 1000,
-    },
-  );
-
   return {
-    ports: parseComPortOutput(stdout),
+    ports: await platformAdapter.listComPorts(),
   };
 }
 
@@ -401,7 +397,7 @@ export async function waitForSerialDriverReady(options: {
   }
 
   const upsName = options.upsName?.trim();
-  if (!upsName || !UPS_NAME_PATTERN.test(upsName)) {
+  if (!upsName || !isValidUpsName(upsName)) {
     throw new Error('upsName must use letters, numbers, or hyphens');
   }
 
@@ -487,7 +483,7 @@ function normalizePrepareLocalNutPayload(
   }
 
   const upsName = payload.upsName?.trim();
-  if (!upsName || !UPS_NAME_PATTERN.test(upsName)) {
+  if (!upsName || !isValidUpsName(upsName)) {
     throw new Error('upsName must use letters, numbers, or hyphens');
   }
 
@@ -570,7 +566,7 @@ function normalizePrepareDriverPayload(
   }
 
   const upsName = payload.upsName?.trim();
-  if (!upsName || !UPS_NAME_PATTERN.test(upsName)) {
+  if (!upsName || !isValidUpsName(upsName)) {
     throw new Error('upsName must use letters, numbers, or hyphens');
   }
 
@@ -579,7 +575,8 @@ function normalizePrepareDriverPayload(
     throw new Error('driver is not in the supported serial driver list');
   }
 
-  const port = normalizeComPort(payload.port);
+  const port =
+    typeof payload.port === 'string' ? normalizeComPort(payload.port) : null;
   if (!port) {
     throw new Error('port must be a COM port value like COM3');
   }
@@ -609,7 +606,7 @@ function normalizePrepareUsbHidPayload(
   }
 
   const upsName = payload.upsName?.trim();
-  if (!upsName || !UPS_NAME_PATTERN.test(upsName)) {
+  if (!upsName || !isValidUpsName(upsName)) {
     throw new Error('upsName must use letters, numbers, or hyphens');
   }
 
@@ -627,11 +624,11 @@ function normalizePrepareUsbHidPayload(
     throw new Error('vendorid and productid must be provided together');
   }
 
-  if (hasVendorId && (!normalizedVendorId || !USB_DEVICE_ID_PATTERN.test(normalizedVendorId))) {
+  if (hasVendorId && (!normalizedVendorId || !isValidUsbDeviceId(normalizedVendorId))) {
     throw new Error('vendorid must be 4 hexadecimal characters');
   }
 
-  if (hasProductId && (!normalizedProductId || !USB_DEVICE_ID_PATTERN.test(normalizedProductId))) {
+  if (hasProductId && (!normalizedProductId || !isValidUsbDeviceId(normalizedProductId))) {
     throw new Error('productid must be 4 hexadecimal characters');
   }
 
@@ -682,7 +679,7 @@ async function writeNutConfigFilesFromContent(
     `Set-Content -Path '${escapeForSingleQuotedPowerShell(upsConfPath)}' -Value $upsConf -Encoding Ascii -Force`,
   ].join('; ');
 
-  await runElevatedPowerShell(elevatedScript);
+  await platformAdapter.runElevatedPowerShell(elevatedScript);
 }
 
 function buildUpsdConf(): string {
@@ -768,6 +765,7 @@ async function doesSerialDriverExist(
 async function verifyUsbHidExperimentalSupport(folderPath: string): Promise<{
   supported: boolean;
   message: string;
+  issueCode?: NutSetupUsbHidExperimentalIssueCode;
 }> {
   const usbhidPath = await findFirstExistingRelativeFile(
     folderPath,
@@ -777,6 +775,7 @@ async function verifyUsbHidExperimentalSupport(folderPath: string): Promise<{
   if (!usbhidPath) {
     return {
       supported: false,
+      issueCode: 'MISSING_DRIVER_BINARY',
       message: `Missing required USB HID driver binary: ${USB_HID_DRIVER_RELATIVE_PATH_CANDIDATES.join(' or ')}`,
     };
   }
@@ -798,7 +797,8 @@ async function verifyUsbHidExperimentalSupport(folderPath: string): Promise<{
     if (!output) {
       return {
         supported: false,
-        message: `Failed to run usbhid-ups.exe -h (${summarizeExecFailure(error)})`,
+        issueCode: 'RUN_HELP_FAILED',
+        message: `Found usbhid-ups.exe, but failed to verify Windows HID compatibility via usbhid-ups.exe -h (${summarizeExecFailure(error)})`,
       };
     }
   }
@@ -806,8 +806,9 @@ async function verifyUsbHidExperimentalSupport(folderPath: string): Promise<{
   if (!output.toLowerCase().includes('experimentalhid')) {
     return {
       supported: false,
+      issueCode: 'INCOMPATIBLE_WINDOWS_BUILD',
       message:
-        'usbhid-ups.exe was found, but `usbhid-ups.exe -h` output does not contain "experimentalhid". Use the required experimental build.',
+        'usbhid-ups.exe is present, but this build is not compatible with Windows USB HID setup (missing required "experimentalhid" support).',
     };
   }
 
@@ -921,206 +922,12 @@ function compactSingleLine(value: string): string {
   return `${collapsed.slice(0, 180)}...`;
 }
 
-function parseComPortOutput(stdout: string): string[] {
-  const deduped = new Set<string>();
-  for (const line of stdout.split(/\r?\n/u)) {
-    const normalized = normalizeComPort(line);
-    if (normalized) {
-      deduped.add(normalized);
-    }
-  }
-
-  return [...deduped].sort(sortComPorts);
-}
-
-function normalizeComPort(value: unknown): string | null {
-  if (typeof value !== 'string') {
-    return null;
-  }
-  const candidate = value.trim().toUpperCase();
-  if (!COM_PORT_PATTERN.test(candidate)) {
-    return null;
-  }
-  return candidate;
-}
-
-function sortComPorts(left: string, right: string): number {
-  const leftValue = Number(left.replace(/^COM/i, ''));
-  const rightValue = Number(right.replace(/^COM/i, ''));
-  return leftValue - rightValue;
-}
-
-async function runElevatedPowerShell(script: string): Promise<void> {
-  const payloadScriptPath = path.join(
-    os.tmpdir(),
-    `easy-ups-nut-setup-payload-${Date.now()}-${Math.random().toString(16).slice(2)}.ps1`,
-  );
-  const launcherScriptPath = path.join(
-    os.tmpdir(),
-    `easy-ups-nut-setup-launcher-${Date.now()}-${Math.random().toString(16).slice(2)}.ps1`,
-  );
-
-  const payloadScript = [
-    '$ErrorActionPreference = "Stop"',
-    'try {',
-    script,
-    '  exit 0',
-    '} catch {',
-    '  Write-Host ""',
-    '  Write-Host "[Easy UPS] Elevated setup script failed." -ForegroundColor Red',
-    '  Write-Host $_.Exception.Message -ForegroundColor Red',
-    '  if ($_.ScriptStackTrace) {',
-    '    Write-Host $_.ScriptStackTrace -ForegroundColor DarkGray',
-    '  }',
-    '  Write-Host ""',
-    '  Write-Host "Press any key to continue..." -ForegroundColor Yellow',
-    '  try {',
-    '    $null = $Host.UI.RawUI.ReadKey("NoEcho,IncludeKeyDown")',
-    '  } catch {',
-    '    Read-Host "Press Enter to continue" | Out-Null',
-    '  }',
-    '  exit 1',
-    '}',
-    '',
-  ].join('\r\n');
-
-  await fs.writeFile(payloadScriptPath, payloadScript, 'utf8');
-  const escapedPayloadScriptPath =
-    escapeForSingleQuotedPowerShell(payloadScriptPath);
-
-  const launcherScript = [
-    '$ErrorActionPreference = "Stop"',
-    `$payloadScriptPath = '${escapedPayloadScriptPath}'`,
-    'try {',
-    '  $p = Start-Process -FilePath "powershell.exe" -Verb RunAs -Wait -PassThru -WindowStyle Normal -ArgumentList @(',
-    "    '-NoProfile',",
-    "    '-ExecutionPolicy',",
-    "    'Bypass',",
-    "    '-File',",
-    '    $payloadScriptPath',
-    '  )',
-    '  if (-not $p) { throw "Failed to launch elevated PowerShell process." }',
-    '  exit $p.ExitCode',
-    '} catch {',
-    '  Write-Error ("Failed to launch elevated process: " + $_.Exception.Message)',
-    '  exit 1',
-    '}',
-    '',
-  ].join('\r\n');
-
-  await fs.writeFile(launcherScriptPath, launcherScript, 'utf8');
-
-  try {
-    await execFileAsync(
-      'powershell.exe',
-      ['-NoProfile', '-ExecutionPolicy', 'Bypass', '-File', launcherScriptPath],
-      { timeout: 10 * 60 * 1000 },
-    );
-  } catch (error) {
-    throw decorateExecError(error);
-  } finally {
-    await fs.unlink(payloadScriptPath).catch(() => {
-      // Ignore cleanup errors for temp script file.
-    });
-    await fs.unlink(launcherScriptPath).catch(() => {
-      // Ignore cleanup errors for temp script file.
-    });
-  }
-}
-
-function decorateExecError(error: unknown): Error {
-  if (!(error instanceof Error)) {
-    return new Error(String(error));
-  }
-
-  const execError = error as Error & {
-    code?: number | string;
-    stdout?: string;
-    stderr?: string;
-  };
-  const details: string[] = [error.message];
-
-  if (execError.code !== undefined) {
-    details.push(`code: ${String(execError.code)}`);
-  }
-
-  if (typeof execError.stderr === 'string' && execError.stderr.trim()) {
-    details.push(`stderr: ${execError.stderr.trim()}`);
-  }
-
-  if (typeof execError.stdout === 'string' && execError.stdout.trim()) {
-    details.push(`stdout: ${execError.stdout.trim()}`);
-  }
-
-  return new Error(details.join('\n'));
-}
-
 function escapeForSingleQuotedPowerShell(value: string): string {
   return value.replace(/'/g, "''");
 }
 
 function sanitizeConfigValue(value: string): string {
   return value.replace(/\r?\n/g, ' ').trim();
-}
-
-function isValidSnmpTarget(value: string): boolean {
-  if (!value) {
-    return false;
-  }
-
-  const match = value.match(SNMP_TARGET_PATTERN);
-  if (!match) {
-    return false;
-  }
-
-  if (!match[1]) {
-    return true;
-  }
-
-  const port = Number(match[1]);
-  return Number.isInteger(port) && port >= 1 && port <= 65535;
-}
-async function checkIfAdmin(): Promise<boolean> {
-    if (process.platform !== 'win32') return true;
-    try {
-        execSync('net session', { stdio: 'ignore' });
-        return true;
-    } catch {
-        return false;
-    }
-}
-async function isNutFolderWritable(folderPath: string): Promise<boolean> {
-    console.log(`[nutSetupService] Passive checking folder: ${folderPath}`);
-
-    // 1. quick check for common protected locations on Windows to avoid unnecessary access attempts
-    if (process.platform === 'win32') {
-        const isProgramFiles = folderPath.toLowerCase().includes('c:\\program files');
-        const isAdmin = await checkIfAdmin();
-        
-        if (isProgramFiles && !isAdmin) {
-            console.log(`[nutSetupService] Path is in Program Files and app is not elevated.`);
-            return false;
-        }
-    }
-
-    // 2. Use synchronous access check to avoid blocking the libuv thread pool
-    // W_OK checks for write permission, F_OK checks for existence
-    try {
-        const etcPath = path.join(folderPath, 'etc');
-        // 先检查文件夹是否存在
-        accessSync(etcPath, fsConstants.F_OK);
-        // 再检查是否有写权限
-        accessSync(etcPath, fsConstants.W_OK);
-        
-        console.log(`[nutSetupService] Access check passed for: ${etcPath}`);
-        return true;
-    } catch (err: unknown) {
-        const candidate = err as NodeJS.ErrnoException;
-        console.log(
-          `[nutSetupService] Access check failed: ${candidate.code ?? candidate.message ?? String(err)}`,
-        );
-        return false;
-    }
 }
 
 function isPermissionError(error: unknown): boolean {
@@ -1169,3 +976,6 @@ function sleep(ms: number): Promise<void> {
     setTimeout(resolve, ms);
   });
 }
+
+
+

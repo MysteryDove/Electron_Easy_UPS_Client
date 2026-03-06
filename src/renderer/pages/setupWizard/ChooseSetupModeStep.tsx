@@ -1,5 +1,6 @@
 import { useTranslation } from 'react-i18next';
 import { Router, MonitorCog, Cable, Usb } from 'lucide-react';
+import { UiButton } from '../../components/ui';
 
 type ChooseSetupModeStepProps = {
   onChooseDirectNut: () => void;
@@ -28,7 +29,7 @@ export function ChooseSetupModeStep({
           className="wizard-form"
           style={{ display: 'grid', gap: '12px', marginBottom: '0' }}
         >
-          <button
+          <UiButton
             className="btn btn--secondary"
             onClick={onChooseDirectNut}
             style={{
@@ -49,9 +50,9 @@ export function ChooseSetupModeStep({
               size={20}
               style={{ flexShrink: 0, marginLeft: '12px' }}
             />
-          </button>
+          </UiButton>
 
-          <button
+          <UiButton
             className="btn btn--secondary"
             onClick={onChooseSnmpSetup}
             style={{
@@ -72,9 +73,9 @@ export function ChooseSetupModeStep({
               size={20}
               style={{ flexShrink: 0, marginLeft: '12px' }}
             />
-          </button>
+          </UiButton>
 
-          <button
+          <UiButton
             className="btn btn--secondary"
             onClick={onChooseSerialSetup}
             style={{
@@ -95,9 +96,9 @@ export function ChooseSetupModeStep({
               size={20}
               style={{ flexShrink: 0, marginLeft: '12px' }}
             />
-          </button>
+          </UiButton>
 
-          <button
+          <UiButton
             className="btn btn--secondary"
             onClick={onChooseUsbHidSetup}
             style={{
@@ -118,7 +119,7 @@ export function ChooseSetupModeStep({
               size={20}
               style={{ flexShrink: 0, marginLeft: '12px', transform: 'rotate(45deg)' }}
             />
-          </button>
+          </UiButton>
         </div>
       </div>
     </div>
