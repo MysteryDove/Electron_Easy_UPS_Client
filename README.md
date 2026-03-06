@@ -1,19 +1,31 @@
 # Easy UPS Client
 
-<img src="screenshot.png" width="600" alt="Screenshot">
+<img src="wizard.png" width="700" alt="Easy UPS Client setup wizard screenshot">
+<img src="screenshot.png" width="700" alt="Easy UPS Client monitoring screenshot">
 
-A modern desktop application for monitoring UPS systems via the NUT (Network UPS Tools) protocol. For now it focuses on SNMP UPS devices using nut, and also brings modern UI with standard warning and auto shutdown features. 
+Easy UPS Client is a desktop app that helps you connect your UPS to NUT without digging through config files by hand.
+
+It is designed to be friendly for normal users: the built-in setup wizard walks you through the important steps, and the app now fully manages the lifecycle of the local NUT processes it uses.
 
 ## Key Features
 
-- **Real-time Monitoring**: Track voltage, load, battery level, and other critical UPS telemetry.
-- **Visualized Data**: Sparkline charts for historical telemetry trends using eCharts and DuckDB.
-- **Configurable Shutdowns**: Set custom countdowns for system shutdown during power failure events.
-- **Multi-language Support**: Internationalization support via i18next.
-- **Modern UI**: Clean, responsive design built with Tailwind CSS and Lucide icons.
-- **System Icon Tray**: Minimizes to system tray with updated battery icons.
-- **Configurable Warning/Auto Shutdown**: Automatic system shutdown/Full Screen Warning when battery levels become critical.
-- **Basic NUT for Windows Configuration Helper**: Helps users set up a local NUT instance on Windows to monitor SNMP UPS devices, including writing configuration files and starting necessary services.
+- **Easy setup wizard**: Helps you configure NUT step by step instead of editing everything manually.
+- **Automatic NUT process handling**: Starts, stops, retries, and cleans up managed NUT processes for you.
+- **Clear UPS monitoring**: Shows battery, load, voltage, frequency, and other live UPS values in a simple interface.
+- **Helpful safety features**: Includes warnings, shutdown actions, tray behavior, and telemetry history.
+
+## Why the Wizard Matters
+
+Setting up NUT can be confusing if you are not familiar with drivers, ports, folders, and config files.
+
+The wizard is meant to make that easier:
+
+- It helps you choose the right setup mode.
+- It prepares the local NUT setup for you.
+- It checks the connection before you finish.
+- It guides you back into setup later if you need to change something.
+
+When the app manages a local NUT installation, it also handles the related process lifecycle for you. That means it can stop managed driver and `upsd` processes before reconfiguration, then bring monitoring back when setup is complete.
 
 ## Technology Stack
 
@@ -31,11 +43,6 @@ A modern desktop application for monitoring UPS systems via the NUT (Network UPS
 
 - [Node.js](https://nodejs.org/) (LTS recommended)
 - [npm](https://www.npmjs.com/)
-
-> [!IMPORTANT]
-> **Manual NUT Configuration Required**
-> NUT (Network UPS Tools) must be configured manually on the host system (or a remote server) before this client can connect to it. Ensure that the `upsd` service is running and accessible.
-> A built-in "Configure NUT for Windows" flow is partially available and still under active development.
 
 ### Installation
 
