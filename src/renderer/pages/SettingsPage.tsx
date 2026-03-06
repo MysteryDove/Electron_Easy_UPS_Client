@@ -299,7 +299,15 @@ export function SettingsPage() {
                     <h2 className="settings-section-title">{t('settings.nutConnection')}</h2>
                     <div className="settings-section-body">
                         <p className="form-hint" style={{ marginBottom: '16px' }}>
-                            {t('settings.connectionDescription', 'Launch the setup wizard to reconfigure the NUT server address, port, and authentication details.')}
+                            {enteringWizard
+                                ? t(
+                                    'settings.connectionDescriptionEnteringWizard',
+                                    'Please wait a moment. The app is closing background UPS services before opening the wizard.',
+                                )
+                                : t(
+                                    'settings.connectionDescription',
+                                    'Launch the setup wizard to reconfigure the NUT server address, port, and authentication details.',
+                                )}
                         </p>
                         <UiButton
                             type="button"
@@ -310,7 +318,11 @@ export function SettingsPage() {
                             disabled={enteringWizard}
                         >
                             <Plug size={18} style={{ marginRight: '8px', display: 'inline-block', verticalAlign: 'middle' }} />
-                            <span style={{ display: 'inline-block', verticalAlign: 'middle' }}>{t('settings.reconfigureConnection', 'Reconfigure connection...')}</span>
+                            <span style={{ display: 'inline-block', verticalAlign: 'middle' }}>
+                                {enteringWizard
+                                    ? t('settings.reconfigureConnectionPending', 'Preparing setup wizard...')
+                                    : t('settings.reconfigureConnection', 'Reconfigure connection...')}
+                            </span>
                         </UiButton>
                     </div>
                 </section>

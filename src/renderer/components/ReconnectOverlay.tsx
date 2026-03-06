@@ -332,7 +332,9 @@ export function ReconnectOverlay() {
                                     }}
                                     disabled={enteringWizard}
                                 >
-                                    {t('reconnect.driverLogReconfigure', 'Re-configure')}
+                                    {enteringWizard
+                                        ? t('reconnect.driverLogReconfigurePending', 'Preparing setup wizard...')
+                                        : t('reconnect.driverLogReconfigure', 'Re-configure')}
                                 </UiButton>
                                 <div className="driver-launch-issue-actions-right">
                                     {requiresPortRescan && (
