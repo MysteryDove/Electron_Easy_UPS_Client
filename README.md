@@ -95,10 +95,6 @@ The application stores settings locally using `electron-store`. You can reset al
 npm run start:reset-settings
 ```
 
-## TODO List
-
-- [ ] Maybe native integration with NUT on windows?
-
 ## License
 
 This project is licensed under the MIT License - see the [package.json](package.json) file for details.
