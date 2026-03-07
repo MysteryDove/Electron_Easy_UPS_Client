@@ -97,7 +97,7 @@ npm run start:reset-settings
 
 ## License
 
-This project is licensed under the MIT License - see the [package.json](package.json) file for details.
+This project is licensed under the GPLv2 License - see the [package.json](package.json) file for details.
 
 ## Author
 
