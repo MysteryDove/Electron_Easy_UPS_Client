@@ -9,7 +9,7 @@ app.name = 'Easy UPS Client';
 if (process.platform === 'win32') {
   app.setAppUserModelId('Easy UPS Client');
 }
-
+app.commandLine.appendSwitch('force-color-profile', 'srgb');
 let mainWindow: BrowserWindow | null = null;
 let isQuitting = false;
 
