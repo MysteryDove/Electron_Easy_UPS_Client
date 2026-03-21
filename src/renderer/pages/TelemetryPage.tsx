@@ -48,6 +48,7 @@ export function TelemetryPage() {
   const [history, setHistory] = useState<TelemetryDataPoint[]>([]);
   const [minMax, setMinMax] = useState<TelemetryRangeLimits>({});
   const [isLoading, setIsLoading] = useState(true);
+  const [tick, setTick] = useState(0);
 
   const metricMeta: MetricMeta[] = [
     {
@@ -173,7 +174,12 @@ export function TelemetryPage() {
     const end = new Date();
     const start = new Date(end.getTime() - TIME_SCALE_MS[timeScale]);
     return { start, end };
-  }, [lastTelemetry?.ts, timeScale]);
+  }, [tick, timeScale]);
+
+  useEffect(() => {
+    const interval = setInterval(() => setTick((t) => t + 1), 30000);
+    return () => clearInterval(interval);
+  }, []);
 
   useEffect(() => {
     let mounted = true;
