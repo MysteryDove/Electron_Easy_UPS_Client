@@ -107,6 +107,15 @@ const wizardConfigSchema = z
   })
   .strict();
 
+const fsdConfigSchema = z
+  .object({
+    shutdownEnabled: z.boolean(),
+    shutdownDelaySeconds: z.number().int().min(1).max(300),
+    shutdownMethod: z.enum(['sleep', 'shutdown']),
+    overlayEnabled: z.boolean(),
+  })
+  .strict();
+
 const lineConfigSchema = z
   .object({
     nominalVoltage: z.number().min(1).max(500),
@@ -133,6 +142,7 @@ export const appConfigSchema = z
     dashboard: dashboardConfigSchema,
     wizard: wizardConfigSchema,
     line: lineConfigSchema,
+    fsd: fsdConfigSchema,
   })
   .strict();
 
@@ -149,6 +159,7 @@ const appConfigPatchSchema = z
     dashboard: dashboardConfigSchema.partial().optional(),
     wizard: wizardConfigSchema.partial().optional(),
     line: lineConfigSchema.partial().optional(),
+    fsd: fsdConfigSchema.partial().optional(),
   })
   .strict();
 
@@ -223,6 +234,12 @@ export const defaultAppConfig: AppConfig = {
     alertEnabled: false,
     alertCooldownMinutes: 5,
   },
+  fsd: {
+    shutdownEnabled: false,
+    shutdownDelaySeconds: 45,
+    shutdownMethod: 'sleep',
+    overlayEnabled: true,
+  },
 };
 
 export function parseConfigPatch(payload: unknown): AppConfigPatch {
@@ -264,6 +281,7 @@ export function applyConfigPatch(
       ? { ...current.wizard, ...patch.wizard }
       : current.wizard,
     line: patch.line ? { ...current.line, ...patch.line } : current.line,
+    fsd: patch.fsd ? { ...current.fsd, ...patch.fsd } : current.fsd,
   };
 
   return appConfigSchema.parse(merged);

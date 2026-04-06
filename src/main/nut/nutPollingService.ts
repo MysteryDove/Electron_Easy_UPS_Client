@@ -46,6 +46,7 @@ const LOG_LEVEL_PRIORITY: Record<DebugLogLevel, number> = {
 export type NutTelemetryUpdatedPayload = {
   ts: string;
   values: TelemetryValues;
+  rawUpsStatus?: string;
 };
 
 type NutTelemetryUpdatedListener = (
@@ -797,6 +798,7 @@ export class NutPollingService {
     const payload: NutTelemetryUpdatedPayload = {
       ts: timestamp.toISOString(),
       values,
+      rawUpsStatus: dynamicSnapshot['ups.status'] ?? undefined,
     };
 
     this.emitToRenderers(IPC_EVENTS.upsTelemetryUpdated, payload);

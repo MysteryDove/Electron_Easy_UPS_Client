@@ -195,7 +195,9 @@
         "shutdownToastTitle": "UPS shutdown threshold reached",
         "shutdownToastBody": "Battery level is {{percent}}% (shutdown threshold {{threshold}}%).",
         "criticalAlertTitle": "UPS Critical — Shutdown Imminent",
-        "criticalAlertBody": "Battery is at {{percent}}%. Shutdown threshold ({{threshold}}%) has been reached."
+        "criticalAlertBody": "Battery is at {{percent}}%. Shutdown threshold ({{threshold}}%) has been reached.",
+        "fsdAlertTitle": "UPS Forced Shutdown (FSD)",
+        "fsdAlertBody": "The UPS has issued a Forced Shutdown (FSD) signal. The system will shut down shortly."
     },
     "settings": {
         "title": "Settings",
@@ -237,6 +239,12 @@
         "shutdownDelay": "Shutdown Delay (sec)",
         "warningOverlay": "Warning-level critical overlay",
         "shutdownOverlay": "Shutdown-level critical overlay",
+        "fsdShutdown": "FSD Shutdown",
+        "fsdDescription": "When the UPS issues a Forced Shutdown (FSD) signal via ups.status, automatically shut down this computer.",
+        "fsdEnable": "Enable FSD shutdown",
+        "fsdMethod": "FSD shutdown method",
+        "fsdDelay": "FSD shutdown delay (sec)",
+        "fsdOverlay": "FSD shutdown overlay",
         "startup": "Startup",
         "startWithWindows": "Start with Windows",
         "startHiddenToTray": "Start hidden in tray",
