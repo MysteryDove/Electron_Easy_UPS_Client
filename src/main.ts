@@ -199,7 +199,7 @@ if (hasSingleInstanceLock) {
   });
 
   app.on('ready', async () => {
-    startupPromise = bootstrapMainProcess().then(() => undefined);
+    startupPromise = bootstrapMainProcess().then((): void => undefined);
 
     try {
       await startupPromise;
