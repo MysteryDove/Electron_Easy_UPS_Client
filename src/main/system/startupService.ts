@@ -21,12 +21,18 @@ export function applyStartWithWindowsSetting(startWithWindows: boolean): void {
       app.setLoginItemSettings({
         openAtLogin: startWithWindows,
         path: updateExePath,
-        args: ['--processStart', `"${path.basename(process.execPath)}"`],
+        args: [
+          '--processStart', `"${path.basename(process.execPath)}"`,
+          '--process-start-args', '"--autostart"',
+        ],
       });
       return;
     }
 
-    app.setLoginItemSettings({ openAtLogin: startWithWindows });
+    app.setLoginItemSettings({
+      openAtLogin: startWithWindows,
+      args: ['--autostart'],
+    });
   } catch (error) {
     console.warn(
       '[StartupService] Failed to update Start with Windows setting.',
