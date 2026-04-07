@@ -1,7 +1,10 @@
 import { app, BrowserWindow, dialog, shell } from 'electron';
 import fs from 'node:fs';
 import path from 'node:path';
-import { bootstrapMainProcess } from './main/bootstrap/appBootstrap';
+import {
+  bootstrapMainProcess,
+  shutdownMainProcess,
+} from './main/bootstrap/appBootstrap';
 import { configStore } from './main/config/configStore';
 
 // Set app identity early so Windows toast notifications and taskbar show the correct name.
@@ -11,7 +14,15 @@ if (process.platform === 'win32') {
 }
 app.commandLine.appendSwitch('force-color-profile', 'srgb');
 let mainWindow: BrowserWindow | null = null;
-let isQuitting = false;
+let startupPromise: Promise<void> | null = null;
+let shutdownRequested = false;
+let shutdownCompleted = false;
+let shutdownPromise: Promise<void> | null = null;
+const hasSingleInstanceLock = app.requestSingleInstanceLock();
+
+if (!hasSingleInstanceLock) {
+  app.quit();
+}
 
 function resolveWindowIconPath(): string | undefined {
   if (app.isPackaged) {
@@ -28,12 +39,9 @@ function resolveWindowIconPath(): string | undefined {
 }
 
 const createWindow = () => {
-  if (mainWindow && !mainWindow.isDestroyed()) {
-    if (!mainWindow.isVisible()) {
-      mainWindow.show();
-    }
-
-    mainWindow.focus();
+  const existingWindow = getMainWindow();
+  if (existingWindow) {
+    focusMainWindow(existingWindow);
     return;
   }
 
@@ -60,14 +68,13 @@ const createWindow = () => {
   }
 
   mainWindow.on('close', (event) => {
-    // Keep background polling/tray behavior alive until explicit quit.
-    if (isQuitting) {
+    if (shutdownCompleted) {
       return;
     }
 
-    if (isWizardRoute(mainWindow)) {
-      isQuitting = true;
-      app.quit();
+    if (shutdownRequested || isWizardRoute(mainWindow)) {
+      event.preventDefault();
+      requestGracefulQuit();
       return;
     }
 
@@ -99,6 +106,78 @@ const createWindow = () => {
   // mainWindow.webContents.openDevTools();
 };
 
+function showMainWindow(): void {
+  const existingWindow = getMainWindow();
+  if (existingWindow) {
+    focusMainWindow(existingWindow);
+    return;
+  }
+
+  void showMainWindowWhenReady();
+}
+
+function getMainWindow(): BrowserWindow | null {
+  if (!mainWindow || mainWindow.isDestroyed()) {
+    return null;
+  }
+
+  return mainWindow;
+}
+
+function focusMainWindow(window: BrowserWindow): void {
+  if (window.isMinimized()) {
+    window.restore();
+  }
+
+  if (!window.isVisible()) {
+    window.show();
+  }
+
+  window.focus();
+}
+
+async function showMainWindowWhenReady(): Promise<void> {
+  await app.whenReady();
+  if (startupPromise) {
+    try {
+      await startupPromise;
+    } catch {
+      return;
+    }
+  }
+
+  const existingWindow = getMainWindow();
+  if (existingWindow) {
+    focusMainWindow(existingWindow);
+    return;
+  }
+
+  createWindow();
+}
+
+function requestGracefulQuit(): void {
+  if (shutdownCompleted) {
+    app.quit();
+    return;
+  }
+
+  shutdownRequested = true;
+  if (shutdownPromise) {
+    return;
+  }
+
+  shutdownPromise = (async () => {
+    try {
+      await shutdownMainProcess();
+    } catch (error) {
+      console.error('[Main] graceful shutdown failed', error);
+    } finally {
+      shutdownCompleted = true;
+      app.quit();
+    }
+  })();
+}
+
 function shouldStartHiddenToTrayOnLaunch(): boolean {
   if (process.platform !== 'win32') {
     return false;
@@ -109,42 +188,55 @@ function shouldStartHiddenToTrayOnLaunch(): boolean {
     return false;
   }
 
-  return app.getLoginItemSettings().wasOpenedAtLogin;
+  return process.argv.includes('--autostart')
+    || app.getLoginItemSettings().wasOpenedAtLogin;
 }
 
 
-app.on('ready', async () => {
-  try {
-    await bootstrapMainProcess();
-  } catch (error) {
-    console.error('[Main] bootstrap failed', error);
-    dialog.showErrorBox(
-      'Easy UPS Client startup failed',
-      error instanceof Error ? error.message : String(error),
-    );
-    app.quit();
-    return;
-  }
+if (hasSingleInstanceLock) {
+  app.on('second-instance', () => {
+    showMainWindow();
+  });
 
-  if (!shouldStartHiddenToTrayOnLaunch()) {
-    createWindow();
-  }
-});
+  app.on('ready', async () => {
+    startupPromise = bootstrapMainProcess().then(() => undefined);
 
-app.on('before-quit', () => {
-  isQuitting = true;
-});
+    try {
+      await startupPromise;
+    } catch (error) {
+      console.error('[Main] bootstrap failed', error);
+      dialog.showErrorBox(
+        'Easy UPS Client startup failed',
+        error instanceof Error ? error.message : String(error),
+      );
+      app.quit();
+      return;
+    }
 
+    if (!shouldStartHiddenToTrayOnLaunch()) {
+      createWindow();
+    }
+  });
 
-app.on('window-all-closed', () => {
-  if (process.platform !== 'darwin') {
-    app.quit();
-  }
-});
+  app.on('before-quit', (event) => {
+    if (shutdownCompleted) {
+      return;
+    }
 
-app.on('activate', () => {
-  createWindow();
-});
+    event.preventDefault();
+    requestGracefulQuit();
+  });
+
+  app.on('window-all-closed', () => {
+    if (process.platform !== 'darwin') {
+      app.quit();
+    }
+  });
+
+  app.on('activate', () => {
+    showMainWindow();
+  });
+}
 
 function isHttpUrl(url: string): boolean {
   try {
