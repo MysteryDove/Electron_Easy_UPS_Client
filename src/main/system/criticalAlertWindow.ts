@@ -25,6 +25,7 @@ export class CriticalAlertWindow {
   private dialogWindow: BrowserWindow | null = null;
   private showing = false;
   private onShutdownRequested: (() => void) | null = null;
+  private onDismissed: (() => void) | null = null;
 
   public get isShowing(): boolean {
     return this.showing;
@@ -33,6 +34,7 @@ export class CriticalAlertWindow {
   public show(
     opts: CriticalAlertOptions,
     onShutdownRequested?: () => void,
+    onDismissed?: () => void,
   ): void {
     if (this.showing) {
       return;
@@ -40,6 +42,7 @@ export class CriticalAlertWindow {
 
     this.showing = true;
     this.onShutdownRequested = onShutdownRequested ?? null;
+    this.onDismissed = onDismissed ?? null;
 
     // Listen for dismiss / shutdown / countdown-expired from the dialog renderer
     ipcMain.once(IPC_CRITICAL_ALERT_DISMISS, this.handleDismiss);
@@ -143,6 +146,7 @@ export class CriticalAlertWindow {
 
     this.showing = false;
     this.onShutdownRequested = null;
+    this.onDismissed = null;
 
     ipcMain.removeListener(IPC_CRITICAL_ALERT_DISMISS, this.handleDismiss);
     ipcMain.removeListener(IPC_CRITICAL_ALERT_SHUTDOWN, this.handleShutdown);
@@ -163,7 +167,9 @@ export class CriticalAlertWindow {
   }
 
   private handleDismiss = (_: IpcMainEvent): void => {
+    const cb = this.onDismissed;
     this.dismiss();
+    cb?.();
   };
 
   private handleShutdown = (_: IpcMainEvent): void => {

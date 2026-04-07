@@ -14,6 +14,9 @@ export class BatterySafetyService {
   private warned = false;
   private shutdownWarned = false;
   private fsdActive = false;
+  /** Once true, the FSD shutdown countdown is irrevocable — it cannot be
+   *  cancelled by subsequent telemetry or connection-loss events. */
+  private fsdShutdownCommitted = false;
   private shutdownScheduled = false;
   private activeShutdownMethod: 'sleep' | 'shutdown' | null = null;
   private lastBatteryPercent: number | null = null;
@@ -136,15 +139,17 @@ export class BatterySafetyService {
     if (batteryPercent > warningPct + BATTERY_RECOVERY_HYSTERESIS_PCT) {
       this.warned = false;
       this.shutdownWarned = false;
-      this.cancelPendingWindowsShutdown();
-      this.criticalAlert.dismiss();
+      if (!this.fsdShutdownCommitted) {
+        this.cancelPendingWindowsShutdown();
+        this.criticalAlert.dismiss();
+      }
     }
   }
 
   private handleFsdStatus(rawUpsStatus: string | undefined, batteryPercent: number): void {
     const fsd = this.fsdConfig;
     if (!fsd.shutdownEnabled) {
-      if (this.fsdActive) {
+      if (this.fsdActive && !this.fsdShutdownCommitted) {
         this.fsdActive = false;
         this.criticalAlert.dismiss();
       }
@@ -155,6 +160,7 @@ export class BatterySafetyService {
 
     if (isFsd && !this.fsdActive) {
       this.fsdActive = true;
+      this.fsdShutdownCommitted = true;
 
       // Dismiss any existing battery alert so FSD takes priority
       this.criticalAlert.dismiss();
@@ -171,16 +177,24 @@ export class BatterySafetyService {
             shutdownCountdownSeconds: fsd.shutdownDelaySeconds,
           },
           () => this.initiateWindowsShutdown(fsd.shutdownMethod),
+          () => this.handleFsdUserDismissed(),
         );
       } else {
         this.initiateWindowsShutdown(fsd.shutdownMethod);
       }
-    } else if (!isFsd && this.fsdActive) {
-      // FSD condition cleared
-      this.fsdActive = false;
-      this.criticalAlert.dismiss();
-      this.cancelPendingWindowsShutdown();
     }
+    // Once FSD shutdown is committed, do NOT cancel it — the NUT master
+    // itself is shutting down which means subsequent telemetry may arrive
+    // without the FSD token (stale/partial reads from a dying daemon).
+    // The countdown must run to completion regardless.
+    // The user CAN still cancel via the overlay's Dismiss/Ignore button.
+  }
+
+  /** Called when the user manually dismisses the FSD overlay (false positive). */
+  private handleFsdUserDismissed(): void {
+    this.fsdActive = false;
+    this.fsdShutdownCommitted = false;
+    this.cancelPendingWindowsShutdown();
   }
 
   private showNotification(title: string, body: string): void {
