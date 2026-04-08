@@ -139,7 +139,7 @@ async function initializeRuntime(): Promise<MainProcessRuntime> {
     runtimeConfigCoordinator.initialize(initialConfig);
 
     // Re-apply startup registration so the --autostart flag is present in the
-    // registry entry. This is a no-op when the setting is already correct and
+    // registry entry.  This is a no-op when the setting is already correct and
     // ensures existing installs pick up the fix without user intervention.
     if (initialConfig.startup.startWithWindows) {
       applyStartWithWindowsSetting(true);
