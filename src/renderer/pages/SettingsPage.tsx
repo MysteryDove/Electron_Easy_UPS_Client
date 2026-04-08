@@ -26,6 +26,10 @@ type SettingsDraft = {
     shutdownCountdownSeconds: number;
     criticalAlertEnabled: boolean;
     criticalShutdownAlertEnabled: boolean;
+    fsdShutdownEnabled: boolean;
+    fsdShutdownDelaySeconds: number;
+    fsdShutdownMethod: ShutdownMethod;
+    fsdOverlayEnabled: boolean;
     themeMode: ThemeMode;
     nominalVoltage: number;
     nominalFrequency: number;
@@ -68,6 +72,10 @@ export function SettingsPage() {
     const [shutdownCountdownSeconds, setShutdownCountdownSeconds] = useState(45);
     const [criticalAlertEnabled, setCriticalAlertEnabled] = useState(true);
     const [criticalShutdownAlertEnabled, setCriticalShutdownAlertEnabled] = useState(true);
+    const [fsdShutdownEnabled, setFsdShutdownEnabled] = useState(false);
+    const [fsdShutdownDelaySeconds, setFsdShutdownDelaySeconds] = useState(45);
+    const [fsdShutdownMethod, setFsdShutdownMethod] = useState<ShutdownMethod>('sleep');
+    const [fsdOverlayEnabled, setFsdOverlayEnabled] = useState(true);
     const [themeMode, setThemeMode] = useState<ThemeMode>('system');
     const [nominalVoltage, setNominalVoltage] = useState(220);
     const [nominalFrequency, setNominalFrequency] = useState(50);
@@ -99,6 +107,10 @@ export function SettingsPage() {
         setShutdownCountdownSeconds(config.battery.shutdownCountdownSeconds);
         setCriticalAlertEnabled(config.battery.criticalAlertEnabled);
         setCriticalShutdownAlertEnabled(config.battery.criticalShutdownAlertEnabled);
+        setFsdShutdownEnabled(config.fsd.shutdownEnabled);
+        setFsdShutdownDelaySeconds(config.fsd.shutdownDelaySeconds);
+        setFsdShutdownMethod(config.fsd.shutdownMethod);
+        setFsdOverlayEnabled(config.fsd.overlayEnabled);
         setThemeMode(config.theme.mode);
         setNominalVoltage(config.line.nominalVoltage);
         setNominalFrequency(config.line.nominalFrequency);
@@ -139,6 +151,10 @@ export function SettingsPage() {
             shutdownCountdownSeconds,
             criticalAlertEnabled,
             criticalShutdownAlertEnabled,
+            fsdShutdownEnabled,
+            fsdShutdownDelaySeconds,
+            fsdShutdownMethod,
+            fsdOverlayEnabled,
             themeMode,
             nominalVoltage,
             nominalFrequency,
@@ -169,6 +185,10 @@ export function SettingsPage() {
             shutdownCountdownSeconds,
             criticalAlertEnabled,
             criticalShutdownAlertEnabled,
+            fsdShutdownEnabled,
+            fsdShutdownDelaySeconds,
+            fsdShutdownMethod,
+            fsdOverlayEnabled,
             themeMode,
             nominalVoltage,
             nominalFrequency,
@@ -221,6 +241,12 @@ export function SettingsPage() {
                         shutdownCountdownSeconds: draft.shutdownCountdownSeconds,
                         criticalAlertEnabled: draft.criticalAlertEnabled,
                         criticalShutdownAlertEnabled: draft.criticalShutdownAlertEnabled,
+                    },
+                    fsd: {
+                        shutdownEnabled: draft.fsdShutdownEnabled,
+                        shutdownDelaySeconds: draft.fsdShutdownDelaySeconds,
+                        shutdownMethod: draft.fsdShutdownMethod,
+                        overlayEnabled: draft.fsdOverlayEnabled,
                     },
                     theme: { mode: draft.themeMode },
                     line: {
@@ -647,6 +673,79 @@ export function SettingsPage() {
                             </label>
                         </div>
 
+                    </div>
+                </section>
+
+                {/* FSD Shutdown */}
+                <section className="settings-section">
+                    <h2 className="settings-section-title">{t('settings.fsdShutdown')}</h2>
+                    <div className="settings-section-body">
+                        <p className="form-hint" style={{ marginBottom: 12 }}>
+                            {t('settings.fsdDescription')}
+                        </p>
+                        <label className="form-toggle">
+                            <UiCheckbox
+                                checked={fsdShutdownEnabled}
+                                onChange={(e) => {
+                                    const checked = e.target.checked;
+                                    setFsdShutdownEnabled(checked);
+                                    void persistSettings({ fsdShutdownEnabled: checked });
+                                }}
+                            />
+                            <span className="form-toggle-label">{t('settings.fsdEnable')}</span>
+                        </label>
+                        <div className="form-row form-row--two" style={{ marginTop: 8 }}>
+                            <div className="form-group" style={{ flex: 1 }}>
+                                <label className="form-label" htmlFor="fsdShutdownMethod">
+                                    {t('settings.fsdMethod')}
+                                </label>
+                                <UiSelect
+                                    id="fsdShutdownMethod"
+                                    className="telemetry-select"
+                                    value={fsdShutdownMethod}
+                                    onChange={(e) => {
+                                        const method = e.target.value as ShutdownMethod;
+                                        setFsdShutdownMethod(method);
+                                        void persistSettings({ fsdShutdownMethod: method });
+                                    }}
+                                    disabled={!fsdShutdownEnabled}
+                                    style={{ width: '100%' }}
+                                >
+                                    <option value="sleep">{t('settings.shutdownMethodSleep')}</option>
+                                    <option value="shutdown">{t('settings.shutdownMethodFull')}</option>
+                                </UiSelect>
+                            </div>
+                            <div className="form-group" style={{ flex: 1 }}>
+                                <label className="form-label" htmlFor="set-fsd-delay">
+                                    {t('settings.fsdDelay')}
+                                </label>
+                                <UiInput
+                                    id="set-fsd-delay"
+                                    className="form-input"
+                                    type="number"
+                                    value={fsdShutdownDelaySeconds}
+                                    onChange={(e) => setFsdShutdownDelaySeconds(Number(e.target.value))}
+                                    onBlur={(e) => void persistSettings({ fsdShutdownDelaySeconds: Number(e.currentTarget.value) })}
+                                    min={1}
+                                    max={300}
+                                    disabled={!fsdShutdownEnabled}
+                                />
+                            </div>
+                        </div>
+                        <div className="form-row form-row--two" style={{ marginTop: 8 }}>
+                            <label className="form-toggle">
+                                <UiCheckbox
+                                    checked={fsdOverlayEnabled}
+                                    disabled={!fsdShutdownEnabled}
+                                    onChange={(e) => {
+                                        const checked = e.target.checked;
+                                        setFsdOverlayEnabled(checked);
+                                        void persistSettings({ fsdOverlayEnabled: checked });
+                                    }}
+                                />
+                                <span className="form-toggle-label">{t('settings.fsdOverlay')}</span>
+                            </label>
+                        </div>
                     </div>
                 </section>
 

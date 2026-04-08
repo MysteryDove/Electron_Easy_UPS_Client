@@ -1,7 +1,7 @@
 {
   "name": "electron_ups_easy_client",
   "productName": "Easy UPS Client",
-  "version": "1.2.1",
+  "version": "1.2.2",
   "description": "Desktop client for monitoring UPS systems via NUT protocol",
   "main": "./.vite/build/main.js",
   "private": true,

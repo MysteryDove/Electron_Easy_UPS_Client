@@ -10,18 +10,24 @@ const BATTERY_RECOVERY_HYSTERESIS_PCT = 5;
 export class BatterySafetyService {
   private readonly criticalAlert: CriticalAlertWindow;
   private batteryConfig: AppConfig['battery'];
+  private fsdConfig: AppConfig['fsd'];
   private warned = false;
   private shutdownWarned = false;
+  private fsdActive = false;
+  /** Once true, the FSD shutdown countdown is irrevocable — it cannot be
+   *  cancelled by subsequent telemetry or connection-loss events. */
+  private fsdShutdownCommitted = false;
   private shutdownScheduled = false;
   private activeShutdownMethod: 'sleep' | 'shutdown' | null = null;
   private lastBatteryPercent: number | null = null;
 
   public constructor(config: AppConfig, criticalAlert: CriticalAlertWindow) {
     this.batteryConfig = config.battery;
+    this.fsdConfig = config.fsd;
     this.criticalAlert = criticalAlert;
   }
 
-  public handleTelemetry(values: TelemetryValues): void {
+  public handleTelemetry(values: TelemetryValues, rawUpsStatus?: string): void {
     const batteryPercent = normalizeBatteryPercent(values.battery_charge_pct);
     if (batteryPercent === null) {
       return;
@@ -103,10 +109,14 @@ export class BatterySafetyService {
     }
 
     this.lastBatteryPercent = batteryPercent;
+
+    // FSD detection: check ups.status tokens for FSD flag
+    this.handleFsdStatus(rawUpsStatus, batteryPercent);
   }
 
   public handleConfigUpdated(config: AppConfig): void {
     this.batteryConfig = config.battery;
+    this.fsdConfig = config.fsd;
 
     if (!config.battery.shutdownEnabled) {
       this.cancelPendingWindowsShutdown();
@@ -129,9 +139,62 @@ export class BatterySafetyService {
     if (batteryPercent > warningPct + BATTERY_RECOVERY_HYSTERESIS_PCT) {
       this.warned = false;
       this.shutdownWarned = false;
-      this.cancelPendingWindowsShutdown();
-      this.criticalAlert.dismiss();
+      if (!this.fsdShutdownCommitted) {
+        this.cancelPendingWindowsShutdown();
+        this.criticalAlert.dismiss();
+      }
     }
+  }
+
+  private handleFsdStatus(rawUpsStatus: string | undefined, batteryPercent: number): void {
+    const fsd = this.fsdConfig;
+    if (!fsd.shutdownEnabled) {
+      if (this.fsdActive && !this.fsdShutdownCommitted) {
+        this.fsdActive = false;
+        this.criticalAlert.dismiss();
+      }
+      return;
+    }
+
+    const isFsd = containsFsdToken(rawUpsStatus);
+
+    if (isFsd && !this.fsdActive) {
+      this.fsdActive = true;
+      this.fsdShutdownCommitted = true;
+
+      // Dismiss any existing battery alert so FSD takes priority
+      this.criticalAlert.dismiss();
+
+      if (fsd.overlayEnabled) {
+        this.criticalAlert.show(
+          {
+            type: 'critical',
+            title: t('batterySafety.fsdAlertTitle'),
+            body: t('batterySafety.fsdAlertBody'),
+            batteryPct: batteryPercent,
+            shutdownPct: this.batteryConfig.shutdownPct,
+            showShutdown: true,
+            shutdownCountdownSeconds: fsd.shutdownDelaySeconds,
+          },
+          () => this.initiateWindowsShutdown(fsd.shutdownMethod),
+          () => this.handleFsdUserDismissed(),
+        );
+      } else {
+        this.initiateWindowsShutdown(fsd.shutdownMethod);
+      }
+    }
+    // Once FSD shutdown is committed, do NOT cancel it — the NUT master
+    // itself is shutting down which means subsequent telemetry may arrive
+    // without the FSD token (stale/partial reads from a dying daemon).
+    // The countdown must run to completion regardless.
+    // The user CAN still cancel via the overlay's Dismiss/Ignore button.
+  }
+
+  /** Called when the user manually dismisses the FSD overlay (false positive). */
+  private handleFsdUserDismissed(): void {
+    this.fsdActive = false;
+    this.fsdShutdownCommitted = false;
+    this.cancelPendingWindowsShutdown();
   }
 
   private showNotification(title: string, body: string): void {
@@ -240,4 +303,14 @@ function isCrossingBelowThreshold(
   }
 
   return previousValue > threshold && currentValue <= threshold;
+}
+
+export function containsFsdToken(rawUpsStatus: string | undefined | null): boolean {
+  if (!rawUpsStatus) {
+    return false;
+  }
+
+  return rawUpsStatus
+    .split(/\s+/u)
+    .some((token) => token.toUpperCase() === 'FSD');
 }

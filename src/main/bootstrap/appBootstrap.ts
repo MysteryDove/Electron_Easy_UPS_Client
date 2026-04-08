@@ -119,9 +119,9 @@ async function initializeRuntime(): Promise<MainProcessRuntime> {
       lineAlertService,
     });
     const unsubscribeTelemetryListener = nutPollingService.onTelemetryUpdated(
-      ({ values }) => {
+      ({ values, rawUpsStatus }) => {
         trayService.handleTelemetry(values);
-        batterySafetyService.handleTelemetry(values);
+        batterySafetyService.handleTelemetry(values, rawUpsStatus);
         lineAlertService.handleTelemetry(values);
       },
     );
