@@ -121,6 +121,14 @@ describe('BatterySafetyService — FSD shutdown is irrevocable', () => {
     expect(mockAlert.show.mock.calls[0][0].type).toBe('critical');
   });
 
+  it('shows FSD overlay even when battery percent is missing', () => {
+    service.handleTelemetry({} as never, 'OL FSD');
+
+    expect(mockAlert.show).toHaveBeenCalledTimes(1);
+    expect(mockAlert.show.mock.calls[0][0].type).toBe('critical');
+    expect(mockAlert.show.mock.calls[0][0].batteryPct).toBe(20);
+  });
+
   it('does NOT dismiss the FSD overlay when subsequent telemetry lacks FSD', () => {
     // FSD detected
     service.handleTelemetry({ battery_charge_pct: 80 } as never, 'OL FSD');

@@ -30,6 +30,10 @@ export class BatterySafetyService {
   public handleTelemetry(values: TelemetryValues, rawUpsStatus?: string): void {
     const batteryPercent = normalizeBatteryPercent(values.battery_charge_pct);
     if (batteryPercent === null) {
+      this.handleFsdStatus(
+        rawUpsStatus,
+        this.lastBatteryPercent ?? this.batteryConfig.shutdownPct,
+      );
       return;
     }
 

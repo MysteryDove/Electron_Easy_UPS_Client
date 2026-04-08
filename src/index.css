@@ -1301,6 +1301,7 @@ body,
 }
 
 .reconnect-card {
+  width: min(480px, calc(100vw - 32px));
   text-align: center;
   padding: 40px;
 }
@@ -1341,6 +1342,35 @@ body,
   font-weight: 500;
   color: #f1f5f9;
   border: 1px solid rgba(255, 255, 255, 0.05);
+}
+
+.reconnect-actions {
+  margin-top: 24px;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 12px;
+}
+
+.reconnect-action-hint {
+  max-width: 420px;
+  margin: 0;
+  font-size: 0.85rem;
+  line-height: 1.5;
+  color: #cbd5e1;
+}
+
+.reconnect-action-status {
+  width: min(420px, 100%);
+  margin: 0;
+  padding: 10px 12px;
+  border-radius: var(--radius-sm);
+  border: 1px solid rgba(239, 68, 68, 0.35);
+  background: rgba(127, 29, 29, 0.45);
+  color: #fecaca;
+  font-size: 0.84rem;
+  line-height: 1.45;
+  text-align: left;
 }
 
 .reconnect-overlay-transition {
