@@ -18,6 +18,7 @@ export function ReconnectOverlay() {
     const [canContinue, setCanContinue] = useState(false);
     const [continuing, setContinuing] = useState(false);
     const [enteringWizard, setEnteringWizard] = useState(false);
+    const [wizardEntryError, setWizardEntryError] = useState<string | null>(null);
     const targetComPort = localDriverLaunchIssue?.port?.trim().toUpperCase() ?? '';
     const requiresPortRescan = localDriverLaunchIssue
         ? shouldRequireSerialPortRescan(localDriverLaunchIssue)
@@ -56,6 +57,7 @@ export function ReconnectOverlay() {
         if (state === 'ready') {
             setHasReachedReadyOnce(true);
             resetRetryUiState(false);
+            setWizardEntryError(null);
         }
     }, [state]);
 
@@ -76,6 +78,16 @@ export function ReconnectOverlay() {
         shouldShow &&
         isColdStartDriverInit &&
         Boolean(localDriverLaunchIssue);
+    const shouldShowGenericReconfigureAction =
+        shouldShow &&
+        !shouldShowDriverIssueDialog;
+
+    useEffect(() => {
+        if (shouldShowDriverIssueDialog) {
+            setWizardEntryError(null);
+        }
+    }, [shouldShowDriverIssueDialog]);
+
     const title = isColdStartDriverInit
         ? t('reconnect.titleInitializing', 'Waiting for driver initialization')
         : t('reconnect.title');
@@ -84,9 +96,18 @@ export function ReconnectOverlay() {
             'reconnect.messageInitializing',
             'Starting local UPS driver. This can take a moment on cold start.',
         )
-        : state === 'degraded'
-            ? t('reconnect.messageDegraded')
-            : t('reconnect.messageConnecting');
+            : state === 'degraded'
+                ? t('reconnect.messageDegraded')
+                : t('reconnect.messageConnecting');
+    const reconfigureDescription = enteringWizard
+        ? t(
+            'settings.connectionDescriptionEnteringWizard',
+            'Please wait a moment. The app is closing background UPS services before opening the wizard.',
+        )
+        : t(
+            'settings.connectionDescription',
+            'Launch the setup wizard to reconfigure the NUT server address, port, and authentication details.',
+        );
 
     const issueSummary = localDriverLaunchIssue
         ? localDriverLaunchIssue.code === 'SERIAL_COM_PRECHECK_MISSING'
@@ -198,19 +219,23 @@ export function ReconnectOverlay() {
 
     const handleEnterWizard = async () => {
         setEnteringWizard(true);
+        setWizardEntryError(null);
 
         try {
             await electronApi.wizard.enter();
             navigate('/wizard');
         } catch (err) {
-            setRetryFailure(
-                err instanceof Error
-                    ? err.message
-                    : t(
-                        'wizard.enterFailed',
-                        'Failed to stop active NUT services before opening the setup wizard.',
-                    ),
-            );
+            const message = err instanceof Error
+                ? err.message
+                : t(
+                    'wizard.enterFailed',
+                    'Failed to stop active NUT services before opening the setup wizard.',
+                );
+            if (shouldShowDriverIssueDialog) {
+                setRetryFailure(message);
+            } else {
+                setWizardEntryError(message);
+            }
             setEnteringWizard(false);
         }
     };
@@ -270,6 +295,28 @@ export function ReconnectOverlay() {
                         <p className="reconnect-battery">
                             {t('reconnect.lastKnownBattery', { percent: lastTelemetry.values['battery_charge_pct'] })}
                         </p>
+                    )}
+                    {shouldShowGenericReconfigureAction && (
+                        <div className="reconnect-actions">
+                            <p className="reconnect-action-hint">{reconfigureDescription}</p>
+                            {wizardEntryError && (
+                                <p className="reconnect-action-status" role="alert">
+                                    {wizardEntryError}
+                                </p>
+                            )}
+                            <UiButton
+                                type="button"
+                                className="btn btn--secondary"
+                                onClick={() => {
+                                    void handleEnterWizard();
+                                }}
+                                disabled={enteringWizard}
+                            >
+                                {enteringWizard
+                                    ? t('settings.reconfigureConnectionPending', 'Preparing setup wizard...')
+                                    : t('settings.reconfigureConnection', 'Reconfigure connection...')}
+                            </UiButton>
+                        </div>
                     )}
                 </div>
 
