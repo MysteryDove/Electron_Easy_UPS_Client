@@ -20,6 +20,7 @@ export class BatterySafetyService {
   private shutdownScheduled = false;
   private activeShutdownMethod: 'sleep' | 'shutdown' | null = null;
   private lastBatteryPercent: number | null = null;
+  private lastOnBattery = false;
 
   public constructor(config: AppConfig, criticalAlert: CriticalAlertWindow) {
     this.batteryConfig = config.battery;
@@ -28,7 +29,37 @@ export class BatterySafetyService {
   }
 
   public handleTelemetry(values: TelemetryValues, rawUpsStatus?: string): void {
-    const batteryPercent = normalizeBatteryPercent(values.battery_charge_pct);
+    const rawBatteryPercent = normalizeBatteryPercent(values.battery_charge_pct);
+
+    // Track OB/OL state regardless of battery percent availability so that
+    // transitions (e.g. OB→OL) are detected even when battery.charge is missing.
+    if (rawUpsStatus) {
+      const isOnBattery = containsObToken(rawUpsStatus);
+
+      // When UPS transitions from on-battery to online, cancel any active
+      // battery-based warning/shutdown — the system is safe on mains power.
+      if (this.lastOnBattery && !isOnBattery) {
+        this.resetBatteryAlertState();
+      }
+
+      // When UPS transitions from online to on-battery, reset the battery
+      // baseline so threshold crossing checks treat this as a fresh power-loss
+      // event and re-trigger warnings even if the percent hasn't changed.
+      if (!this.lastOnBattery && isOnBattery) {
+        this.lastBatteryPercent = null;
+      }
+
+      this.lastOnBattery = isOnBattery;
+    }
+
+    // When battery.charge is unavailable but the UPS reports LB (Low Battery)
+    // while on battery, synthesize a value at shutdownPct so the existing
+    // threshold-crossing logic triggers warnings and shutdown.
+    const batteryPercent = rawBatteryPercent
+      ?? (this.lastOnBattery && containsLbToken(rawUpsStatus)
+        ? this.batteryConfig.shutdownPct
+        : null);
+
     if (batteryPercent === null) {
       this.handleFsdStatus(
         rawUpsStatus,
@@ -38,77 +69,83 @@ export class BatterySafetyService {
     }
 
     const battery = this.batteryConfig;
+
     this.resetNotificationStateIfRecovered(batteryPercent, battery.warningPct);
 
-    if (
-      !this.warned &&
-      isCrossingBelowThreshold(
-        this.lastBatteryPercent,
-        batteryPercent,
-        battery.warningPct,
-      )
-    ) {
-      this.warned = true;
+    // Only trigger battery-based warnings/shutdown when on battery (OB).
+    // When the UPS is online (OL) the system runs on mains power and low
+    // battery percent simply means the battery is charging — not a danger.
+    if (this.lastOnBattery) {
+      if (
+        !this.warned &&
+        isCrossingBelowThreshold(
+          this.lastBatteryPercent,
+          batteryPercent,
+          battery.warningPct,
+        )
+      ) {
+        this.warned = true;
 
-      if (battery.warningToastEnabled) {
+        if (battery.warningToastEnabled) {
+          this.showNotification(
+            t('batterySafety.warningToastTitle'),
+            t('batterySafety.warningToastBody', { percent: batteryPercent, threshold: battery.warningPct }),
+          );
+        }
+
+        if (battery.criticalAlertEnabled) {
+          this.criticalAlert.show(
+            {
+              type: 'warning',
+              title: t('batterySafety.warningAlertTitle'),
+              body: t('batterySafety.warningAlertBody', { percent: batteryPercent, threshold: battery.warningPct }),
+              batteryPct: batteryPercent,
+              shutdownPct: battery.shutdownPct,
+              showShutdown: battery.shutdownEnabled,
+            },
+            battery.shutdownEnabled
+              ? () => this.initiateWindowsShutdown(battery.shutdownMethod)
+              : undefined,
+          );
+        }
+      }
+
+      if (
+        !this.shutdownWarned &&
+        isCrossingBelowThreshold(
+          this.lastBatteryPercent,
+          batteryPercent,
+          battery.shutdownPct,
+        )
+      ) {
+        this.shutdownWarned = true;
+
+        // Dismiss the warning-level alert if still showing
+        this.criticalAlert.dismiss();
+
         this.showNotification(
-          t('batterySafety.warningToastTitle'),
-          t('batterySafety.warningToastBody', { percent: batteryPercent, threshold: battery.warningPct }),
+          t('batterySafety.shutdownToastTitle'),
+          t('batterySafety.shutdownToastBody', { percent: batteryPercent, threshold: battery.shutdownPct }),
         );
-      }
 
-      if (battery.criticalAlertEnabled) {
-        this.criticalAlert.show(
-          {
-            type: 'warning',
-            title: t('batterySafety.warningAlertTitle'),
-            body: t('batterySafety.warningAlertBody', { percent: batteryPercent, threshold: battery.warningPct }),
-            batteryPct: batteryPercent,
-            shutdownPct: battery.shutdownPct,
-            showShutdown: battery.shutdownEnabled,
-          },
-          battery.shutdownEnabled
-            ? () => this.initiateWindowsShutdown(battery.shutdownMethod)
-            : undefined,
-        );
-      }
-    }
-
-    if (
-      !this.shutdownWarned &&
-      isCrossingBelowThreshold(
-        this.lastBatteryPercent,
-        batteryPercent,
-        battery.shutdownPct,
-      )
-    ) {
-      this.shutdownWarned = true;
-
-      // Dismiss the warning-level alert if still showing
-      this.criticalAlert.dismiss();
-
-      this.showNotification(
-        t('batterySafety.shutdownToastTitle'),
-        t('batterySafety.shutdownToastBody', { percent: batteryPercent, threshold: battery.shutdownPct }),
-      );
-
-      // Show critical alert with countdown — the countdown-expired or
-      // "Shut Down Now" button in the dialog triggers the shutdown callback.
-      if (battery.criticalShutdownAlertEnabled) {
-        this.criticalAlert.show(
-          {
-            type: 'critical',
-            title: t('batterySafety.criticalAlertTitle'),
-            body: t('batterySafety.criticalAlertBody', { percent: batteryPercent, threshold: battery.shutdownPct }),
-            batteryPct: batteryPercent,
-            shutdownPct: battery.shutdownPct,
-            showShutdown: true,
-            shutdownCountdownSeconds: battery.shutdownEnabled ? battery.shutdownCountdownSeconds : undefined,
-          },
-          () => this.initiateWindowsShutdown(battery.shutdownMethod),
-        );
-      } else if (battery.shutdownEnabled) {
-        this.initiateWindowsShutdown(battery.shutdownMethod);
+        // Show critical alert with countdown — the countdown-expired or
+        // "Shut Down Now" button in the dialog triggers the shutdown callback.
+        if (battery.criticalShutdownAlertEnabled) {
+          this.criticalAlert.show(
+            {
+              type: 'critical',
+              title: t('batterySafety.criticalAlertTitle'),
+              body: t('batterySafety.criticalAlertBody', { percent: batteryPercent, threshold: battery.shutdownPct }),
+              batteryPct: batteryPercent,
+              shutdownPct: battery.shutdownPct,
+              showShutdown: true,
+              shutdownCountdownSeconds: battery.shutdownEnabled ? battery.shutdownCountdownSeconds : undefined,
+            },
+            () => this.initiateWindowsShutdown(battery.shutdownMethod),
+          );
+        } else if (battery.shutdownEnabled) {
+          this.initiateWindowsShutdown(battery.shutdownMethod);
+        }
       }
     }
 
@@ -141,12 +178,18 @@ export class BatterySafetyService {
     warningPct: number,
   ): void {
     if (batteryPercent > warningPct + BATTERY_RECOVERY_HYSTERESIS_PCT) {
-      this.warned = false;
-      this.shutdownWarned = false;
-      if (!this.fsdShutdownCommitted) {
-        this.cancelPendingWindowsShutdown();
-        this.criticalAlert.dismiss();
-      }
+      this.resetBatteryAlertState();
+    }
+  }
+
+  /** Reset battery-based warning/shutdown state and dismiss active overlays.
+   *  Does NOT affect FSD state — FSD shutdown is governed separately. */
+  private resetBatteryAlertState(): void {
+    this.warned = false;
+    this.shutdownWarned = false;
+    if (!this.fsdShutdownCommitted) {
+      this.cancelPendingWindowsShutdown();
+      this.criticalAlert.dismiss();
     }
   }
 
@@ -317,4 +360,24 @@ export function containsFsdToken(rawUpsStatus: string | undefined | null): boole
   return rawUpsStatus
     .split(/\s+/u)
     .some((token) => token.toUpperCase() === 'FSD');
+}
+
+export function containsObToken(rawUpsStatus: string | undefined | null): boolean {
+  if (!rawUpsStatus) {
+    return false;
+  }
+
+  return rawUpsStatus
+    .split(/\s+/u)
+    .some((token) => token.toUpperCase() === 'OB');
+}
+
+export function containsLbToken(rawUpsStatus: string | undefined | null): boolean {
+  if (!rawUpsStatus) {
+    return false;
+  }
+
+  return rawUpsStatus
+    .split(/\s+/u)
+    .some((token) => token.toUpperCase() === 'LB');
 }
