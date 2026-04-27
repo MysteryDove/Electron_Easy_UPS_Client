@@ -275,7 +275,13 @@ export function SettingsPage() {
             } catch (err) {
                 setSaveMessage({
                     type: 'error',
-                    text: err instanceof Error ? err.message : t('settings.saveFailed'),
+                    text: err instanceof Error
+                        ? t(
+                            'settings.saveFailedWithReason',
+                            'Failed to save settings: {{reason}}',
+                            { reason: err.message },
+                        )
+                        : t('settings.saveFailed'),
                 });
             } finally {
                 setSaving(false);
@@ -294,7 +300,11 @@ export function SettingsPage() {
             setSaveMessage({
                 type: 'error',
                 text: err instanceof Error
-                    ? err.message
+                    ? t(
+                        'wizard.enterFailedWithReason',
+                        'Failed to stop active NUT services before opening the setup wizard: {{reason}}',
+                        { reason: err.message },
+                    )
                     : t(
                         'wizard.enterFailed',
                         'Failed to stop active NUT services before opening the setup wizard.',
@@ -343,7 +353,7 @@ export function SettingsPage() {
                             }}
                             disabled={enteringWizard}
                         >
-                            <Plug size={18} style={{ marginRight: '8px', display: 'inline-block', verticalAlign: 'middle' }} />
+                            <Plug size={18} style={{ marginInlineEnd: '8px', display: 'inline-block', verticalAlign: 'middle' }} />
                             <span style={{ display: 'inline-block', verticalAlign: 'middle' }}>
                                 {enteringWizard
                                     ? t('settings.reconfigureConnectionPending', 'Preparing setup wizard...')
@@ -820,9 +830,29 @@ export function SettingsPage() {
                                 }}
                                 style={{ width: '100%', maxWidth: 300 }}
                             >
-                                <option value="system">{t('settings.system')}</option>
-                                <option value="en">{t('settings.en')}</option>
-                                <option value="zh">{t('settings.zh')}</option>
+                                <option value="system">System</option>
+                                <option value="en">English</option>
+                                <option value="zh">简体中文</option>
+                                <option value="tw">繁體中文</option>
+                                <option value="ja">日本語</option>
+                                <option value="kr">한국어</option>
+                                <option value="fr">Français</option>
+                                <option value="es">Español</option>
+                                <option value="pt">Português</option>
+                                <option value="de">Deutsch</option>
+                                <option value="nl">Nederlands</option>
+                                <option value="ar">العربية</option>
+                                <option value="da">Dansk</option>
+                                <option value="fi">Suomi</option>
+                                <option value="it">Italiano</option>
+                                <option value="pl">Polski</option>
+                                <option value="ru">Русский</option>
+                                <option value="sv">Svenska</option>
+                                <option value="uk">Українська</option>
+                                <option value="vi">Tiếng Việt</option>
+                                <option value="id">Bahasa Indonesia</option>
+                                <option value="tr">Türkçe</option>
+                                <option value="th">ไทย</option>
                             </UiSelect>
                         </div>
                     </div>
