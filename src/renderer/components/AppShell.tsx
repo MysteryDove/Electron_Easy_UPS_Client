@@ -10,6 +10,8 @@ import {
     CircleHelp,
     PanelLeftClose,
     PanelLeftOpen,
+    PanelRightClose,
+    PanelRightOpen,
 } from 'lucide-react';
 import { UiButton } from './ui';
 
@@ -39,7 +41,10 @@ export function AppShell({ children }: { children: ReactNode }) {
                         onClick={() => setIsCollapsed(!isCollapsed)}
                         title={isCollapsed ? t('appShell.expandSidebar') : t('appShell.collapseSidebar')}
                     >
-                        {isCollapsed ? <PanelLeftOpen size={24} /> : <PanelLeftClose size={24} />}
+                        {document.documentElement.dir === 'rtl' 
+                            ? (isCollapsed ? <PanelRightOpen size={24} /> : <PanelRightClose size={24} />) 
+                            : (isCollapsed ? <PanelLeftOpen size={24} /> : <PanelLeftClose size={24} />)
+                        }
                     </UiButton>
                 </div>
 

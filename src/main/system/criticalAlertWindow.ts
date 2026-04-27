@@ -4,6 +4,7 @@ import {
   screen,
   type IpcMainEvent,
 } from 'electron';
+import { t } from './i18nService';
 
 const IPC_CRITICAL_ALERT_DISMISS = 'critical-alert:dismiss';
 const IPC_CRITICAL_ALERT_SHUTDOWN = 'critical-alert:shutdown';
@@ -207,6 +208,15 @@ function buildDialogHtml(opts: CriticalAlertOptions): string {
     typeof opts.shutdownCountdownSeconds === 'number' &&
     opts.shutdownCountdownSeconds > 0;
   const countdownSec = opts.shutdownCountdownSeconds ?? 0;
+  const countdownText = t('criticalAlertWindow.countdownText', {
+    defaultValue: 'System will shut down in',
+  });
+  const dismissLabel = hasCountdown
+    ? t('criticalAlertWindow.dismissIgnore', { defaultValue: 'Ignore' })
+    : t('criticalAlertWindow.dismiss', { defaultValue: 'Dismiss' });
+  const shutdownLabel = t('criticalAlertWindow.shutdownNow', {
+    defaultValue: 'Shut Down Now',
+  });
 
   const isWarning = opts.type === 'warning';
   const alertColor = isWarning ? '#f59e0b' : '#E81123';
@@ -233,7 +243,7 @@ function buildDialogHtml(opts: CriticalAlertOptions): string {
   const countdownHtml = hasCountdown
     ? `<div class="countdown">
       <div class="countdown-bar-track"><div class="countdown-bar-fill" id="countdown-bar"></div></div>
-      <div class="countdown-text">System will shut down in <span id="countdown-seconds">${countdownSec}</span>s</div>
+      <div class="countdown-text">${escapeHtml(countdownText)} <span id="countdown-seconds">${countdownSec}</span>s</div>
     </div>`
     : '';
 
@@ -256,9 +266,8 @@ function buildDialogHtml(opts: CriticalAlertOptions): string {
     }, 1000);`
     : '';
 
-  const dismissLabel = hasCountdown ? 'Ignore' : 'Dismiss';
   const shutdownBtnHtml = showShutdown
-    ? '<button class="btn-shutdown" id="btn-shutdown">Shut Down Now' + (hasCountdown ? ' (<span id="btn-countdown-seconds">' + countdownSec + '</span>s)' : '') + '</button>'
+    ? '<button class="btn-shutdown" id="btn-shutdown">' + escapeHtml(shutdownLabel) + (hasCountdown ? ' (<span id="btn-countdown-seconds">' + countdownSec + '</span>s)' : '') + '</button>'
     : '';
 
   return `<!DOCTYPE html>
@@ -292,7 +301,7 @@ function buildDialogHtml(opts: CriticalAlertOptions): string {
     display: flex; align-items: center; padding: 3px;
   }
   .battery-icon::after {
-    content: ''; position: absolute; right: -8px; top: 50%;
+    content: ''; position: absolute; inset-inline-end: -8px; top: 50%;
     transform: translateY(-50%); width: 5px; height: 14px;
     background: #f5f5f5; border-radius: 0 2px 2px 0;
   }
@@ -301,7 +310,7 @@ function buildDialogHtml(opts: CriticalAlertOptions): string {
     min-width: 2px; transition: width 0.3s;
   }
   .battery-pct { font-size: 36px; font-weight: 700; color: ${alertColor}; line-height: 1; }
-  .battery-pct-unit { font-size: 18px; font-weight: 400; color: #aaa; margin-left: 2px; }
+  .battery-pct-unit { font-size: 18px; font-weight: 400; color: #aaa; margin-inline-start: 2px; }
   .message { font-size: 14px; line-height: 1.5; color: #ccc; }
   .footer {
     padding: 16px 24px; display: flex;

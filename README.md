@@ -13,6 +13,7 @@ It is designed to be friendly for normal users: the built-in setup wizard walks 
 - **Automatic NUT process handling**: Starts, stops, retries, and cleans up managed NUT processes for you.
 - **Clear UPS monitoring**: Shows battery, load, voltage, frequency, and other live UPS values in a simple interface.
 - **Helpful safety features**: Includes warnings, shutdown actions, tray behavior, and telemetry history.
+- **Built-in internationalization**: Supports 22 UI languages and can follow the system locale automatically.
 
 ## Why the Wizard Matters
 
@@ -36,6 +37,12 @@ When the app manages a local NUT installation, it also handles the related proce
 - **Icons**: [Lucide React](https://lucide.dev/)
 - **I18n**: [i18next](https://www.i18next.com/)
 - **Database**: [DuckDB](https://duckdb.org/) (for telemetry storage)
+
+## Supported Languages
+
+The app can follow the operating system locale automatically, or you can choose a language manually in Settings.
+
+Supported UI languages: English, Simplified Chinese, Traditional Chinese, Japanese, Korean, French, Spanish, Portuguese, German, Dutch, Arabic, Danish, Finnish, Italian, Polish, Russian, Swedish, Ukrainian, Vietnamese, Indonesian, Turkish, and Thai.
 
 ## Getting Started
 

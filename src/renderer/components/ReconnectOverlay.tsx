@@ -208,7 +208,11 @@ export function ReconnectOverlay() {
         } catch (error) {
             setRetryFailure(
                 error instanceof Error
-                    ? error.message
+                    ? t(
+                        'reconnect.driverLogRescanErrorWithReason',
+                        'Failed to rescan COM ports: {{reason}}',
+                        { reason: error.message },
+                    )
                     : t(
                         'reconnect.driverLogRescanError',
                         'Failed to rescan COM ports.',
@@ -226,7 +230,11 @@ export function ReconnectOverlay() {
             navigate('/wizard');
         } catch (err) {
             const message = err instanceof Error
-                ? err.message
+                ? t(
+                    'wizard.enterFailedWithReason',
+                    'Failed to stop active NUT services before opening the setup wizard: {{reason}}',
+                    { reason: err.message },
+                )
                 : t(
                     'wizard.enterFailed',
                     'Failed to stop active NUT services before opening the setup wizard.',
@@ -261,7 +269,11 @@ export function ReconnectOverlay() {
         } catch (error) {
             setRetryFailure(
                 error instanceof Error
-                    ? error.message
+                    ? t(
+                        'reconnect.driverLogRetryFailedWithReason',
+                        'Driver retry failed: {{reason}}',
+                        { reason: error.message },
+                    )
                     : retryFailedFallback,
             );
         }

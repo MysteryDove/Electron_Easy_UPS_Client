@@ -6,6 +6,7 @@ import {
   shutdownMainProcess,
 } from './main/bootstrap/appBootstrap';
 import { configStore } from './main/config/configStore';
+import { t } from './main/system/i18nService';
 
 // Set app identity early so Windows toast notifications and taskbar show the correct name.
 app.name = 'Easy UPS Client';
@@ -206,7 +207,9 @@ if (hasSingleInstanceLock) {
     } catch (error) {
       console.error('[Main] bootstrap failed', error);
       dialog.showErrorBox(
-        'Easy UPS Client startup failed',
+        t('startup.bootstrapFailedTitle', {
+          defaultValue: 'Easy UPS Client startup failed',
+        }),
         error instanceof Error ? error.message : String(error),
       );
       app.quit();

@@ -81,9 +81,7 @@ export function NutSetupStep({
   const isSerialSetup = mode === 'serialSetup';
   const isUsbHidSetup = mode === 'usbHidSetup';
 
-  const downloadLink = isUsbHidSetup
-    ? 'https://github.com/MysteryDove/nut/releases/tag/v2.8.4-exphid01'
-    : 'https://github.com/networkupstools/nut/releases';
+  const downloadLink = 'https://github.com/networkupstools/nut/releases/';
 
   const prepareButtonDisabled = isSerialSetup
     ? !canPrepareLocalDriver
@@ -187,7 +185,7 @@ export function NutSetupStep({
                 : isUsbHidSetup
                   ? t(
                     'wizard.usbHidSetupDesc',
-                    'Download the experimental NUT Windows build with HID support, decompress it into a new folder, select it, then configure usbhid-ups below.',
+                    'Download an official NUT release version 2.8.5 or newer from the NUT GitHub releases page, decompress it into a new folder, select it, then configure usbhid-ups below.',
                   )
                   : t(
                     'wizard.nutDownloadDesc',
@@ -198,7 +196,7 @@ export function NutSetupStep({
 
           <div
             className="wizard-form"
-            style={{ overflowY: 'auto', paddingRight: '12px', flex: 1 }}
+            style={{ overflowY: 'auto', paddingInlineEnd: '12px', flex: 1 }}
           >
             <h2
               style={{
@@ -221,7 +219,7 @@ export function NutSetupStep({
                 {isUsbHidSetup
                   ? t(
                     'wizard.nutDownloadExperimentalLink',
-                    'Download experimental NUT build with USB HID support',
+                    'Download official NUT release (2.8.5 or newer)',
                   )
                   : t('wizard.nutDownloadLink', 'Download NUT from GitHub Releases')}
               </a>
@@ -469,22 +467,22 @@ export function localizeUsbHidValidationMessage(
       : '';
     return t(
       'wizard.usbHidMissingDriverBinary',
-      'Missing required USB HID driver binary: {{paths}}. Please download the experimental NUT build from the link above.',
+      'Missing required USB HID driver binary: {{paths}}. Please download and extract an official NUT release version 2.8.5 or newer from the link above.',
       { paths: paths || 'bin/usbhid-ups.exe or sbin/usbhid-ups.exe' },
     );
   }
 
   if (issueCode === 'INCOMPATIBLE_WINDOWS_BUILD') {
     return t(
-      'wizard.usbHidMissingExperimentalhid',
-      'usbhid-ups.exe is present, but this build is not compatible with Windows USB HID setup (missing required experimentalhid support). Please download the required Windows-compatible experimental build from the link above.',
+      'wizard.usbHidMissingWinhid',
+      'usbhid-ups.exe is present, but this build is not compatible with Windows USB HID setup (missing required winhid support). Please use an official NUT release version 2.8.5 or newer from the link above.',
     );
   }
 
   if (issueCode === 'RUN_HELP_FAILED') {
     return t(
       'wizard.usbHidRunHelpFailed',
-      'Found usbhid-ups.exe, but failed to verify Windows HID compatibility from usbhid-ups.exe -h output. This build may be incompatible. Please download the required Windows-compatible experimental build from the link above.',
+      'Found usbhid-ups.exe, but failed to verify Windows HID compatibility from usbhid-ups.exe -h output. This build may be incompatible. Please use an official NUT release version 2.8.5 or newer from the link above.',
     );
   }
 
@@ -493,7 +491,7 @@ export function localizeUsbHidValidationMessage(
     const paths = message.slice(missingDriverPrefix.length).trim();
     return t(
       'wizard.usbHidMissingDriverBinary',
-      'Missing required USB HID driver binary: {{paths}}. Please download the experimental NUT build from the link above.',
+      'Missing required USB HID driver binary: {{paths}}. Please download and extract an official NUT release version 2.8.5 or newer from the link above.',
       { paths: paths || 'bin/usbhid-ups.exe or sbin/usbhid-ups.exe' },
     );
   }
@@ -501,13 +499,13 @@ export function localizeUsbHidValidationMessage(
   if (
     message.includes('usbhid-ups.exe') &&
     (
-      message.includes('does not contain "experimentalhid"') ||
+      message.includes('does not contain "winhid"') ||
       message.includes('not compatible with Windows USB HID setup')
     )
   ) {
     return t(
-      'wizard.usbHidMissingExperimentalhid',
-      'usbhid-ups.exe is present, but this build is not compatible with Windows USB HID setup (missing required experimentalhid support). Please download the required Windows-compatible experimental build from the link above.',
+      'wizard.usbHidMissingWinhid',
+      'usbhid-ups.exe is present, but this build is not compatible with Windows USB HID setup (missing required winhid support). Please use an official NUT release version 2.8.5 or newer from the link above.',
     );
   }
 
@@ -520,7 +518,7 @@ export function localizeUsbHidValidationMessage(
   ) {
     return t(
       'wizard.usbHidRunHelpFailed',
-      'Found usbhid-ups.exe, but failed to verify Windows HID compatibility from usbhid-ups.exe -h output. This build may be incompatible. Please download the required Windows-compatible experimental build from the link above.',
+      'Found usbhid-ups.exe, but failed to verify Windows HID compatibility from usbhid-ups.exe -h output. This build may be incompatible. Please use an official NUT release version 2.8.5 or newer from the link above.',
     );
   }
 
