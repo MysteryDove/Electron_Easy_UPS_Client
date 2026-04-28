@@ -28,6 +28,12 @@ The wizard is meant to make that easier:
 
 When the app manages a local NUT installation, it also handles the related process lifecycle for you. That means it can stop managed driver and `upsd` processes before reconfiguration, then bring monitoring back when setup is complete.
 
+## Supported Languages
+
+The app can follow the operating system locale automatically, or you can choose a language manually in Settings. Please notice except English and Simplified Chinese, other languages are translated under help of AI and might contain wrong wordings. If you find any problem, it is appreciated to raise an issue to fix that!
+
+Supported UI languages: English, Simplified Chinese, Traditional Chinese, Japanese, Korean, French, Spanish, Portuguese, German, Dutch, Arabic, Danish, Finnish, Italian, Polish, Russian, Swedish, Ukrainian, Vietnamese, Indonesian, Turkish, and Thai.
+
 ## Technology Stack
 
 - **Framework**: [Electron](https://www.electronjs.org/)
@@ -37,12 +43,6 @@ When the app manages a local NUT installation, it also handles the related proce
 - **Icons**: [Lucide React](https://lucide.dev/)
 - **I18n**: [i18next](https://www.i18next.com/)
 - **Database**: [DuckDB](https://duckdb.org/) (for telemetry storage)
-
-## Supported Languages
-
-The app can follow the operating system locale automatically, or you can choose a language manually in Settings. Please notice except English and Simplified Chinese, other languages are translated under help of AI and might contain wrong wordings. If you find any problem, it is appreciated to raise an issue to fix that!
-
-Supported UI languages: English, Simplified Chinese, Traditional Chinese, Japanese, Korean, French, Spanish, Portuguese, German, Dutch, Arabic, Danish, Finnish, Italian, Polish, Russian, Swedish, Ukrainian, Vietnamese, Indonesian, Turkish, and Thai.
 
 ## Getting Started
 
