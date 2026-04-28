@@ -40,7 +40,7 @@ When the app manages a local NUT installation, it also handles the related proce
 
 ## Supported Languages
 
-The app can follow the operating system locale automatically, or you can choose a language manually in Settings.
+The app can follow the operating system locale automatically, or you can choose a language manually in Settings. Please notice except English and Simplified Chinese, other languages are translated under help of AI and might contain wrong wordings. If you find any problem, it is appreciated to raise an issue to fix that!
 
 Supported UI languages: English, Simplified Chinese, Traditional Chinese, Japanese, Korean, French, Spanish, Portuguese, German, Dutch, Arabic, Danish, Finnish, Italian, Polish, Russian, Swedish, Ukrainian, Vietnamese, Indonesian, Turkish, and Thai.
 
