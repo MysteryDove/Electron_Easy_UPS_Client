@@ -141,7 +141,7 @@
         "usbHidVidPidRequired": "Hem Vendor ID hem de Product ID girin veya VID/PID Belirlemeyi devre dışı bırakın",
         "usbHidExperimentalhid": "Deneysel HID (experimentalhid)",
         "usbHidPollonly": "Yalnızca Sorgu (pollonly)",
-        "usbHidFixedFlagsHint": "experimentalhid ve pollonly şu anda Windows'ta sabit AÇIK durumdadır ve değiştirilemez.",
+        "usbHidFixedFlagsHint": "winhid ve pollonly şu anda Windows'ta sabit AÇIK durumdadır ve değiştirilemez.",
         "usbHidMissingDriverBinary": "Gerekli USB HID sürücüsü bulunamadı: {{paths}}. Lütfen yukarıdaki bağlantıdan deneysel NUT yapısını indirin.",
         "usbHidMissingExperimentalhid": "usbhid-ups.exe mevcut ancak bu yapı Windows USB HID kurulumuyla uyumlu değil. Lütfen Windows uyumlu yapıyı indirin.",
         "usbHidRunHelpFailed": "usbhid-ups.exe bulundu ancak Windows HID uyumluluğu doğrulanamadı. Klasörü yeniden indirmeyi deneyin.",
