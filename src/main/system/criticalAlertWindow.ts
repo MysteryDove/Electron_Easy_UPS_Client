@@ -4,7 +4,7 @@ import {
   screen,
   type IpcMainEvent,
 } from 'electron';
-import { t } from './i18nService';
+import { t, getCurrentLocale } from './i18nService';
 
 const IPC_CRITICAL_ALERT_DISMISS = 'critical-alert:dismiss';
 const IPC_CRITICAL_ALERT_SHUTDOWN = 'critical-alert:shutdown';
@@ -218,6 +218,9 @@ function buildDialogHtml(opts: CriticalAlertOptions): string {
     defaultValue: 'Shut Down Now',
   });
 
+  const locale = getCurrentLocale();
+  const dir = locale === 'ar' ? 'rtl' : 'ltr';
+
   const isWarning = opts.type === 'warning';
   const alertColor = isWarning ? '#f59e0b' : '#E81123';
   const alertHoverColor = isWarning ? '#d97706' : '#f5232e';
@@ -271,7 +274,7 @@ function buildDialogHtml(opts: CriticalAlertOptions): string {
     : '';
 
   return `<!DOCTYPE html>
-<html>
+<html dir="${dir}" lang="${locale}">
 <head>
 <style>
   * { margin: 0; padding: 0; box-sizing: border-box; }

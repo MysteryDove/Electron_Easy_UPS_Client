@@ -146,3 +146,7 @@ export function subscribeToLangChange(callback: () => void): () => void {
         i18next.off('languageChanged', callback);
     };
 }
+
+export function getCurrentLocale(): string {
+    return i18next.language ?? 'en';
+}
