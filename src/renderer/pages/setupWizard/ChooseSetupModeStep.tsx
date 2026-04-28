@@ -48,7 +48,7 @@ export function ChooseSetupModeStep({
             </span>
             <Router
               size={20}
-              style={{ flexShrink: 0, marginLeft: '12px' }}
+              style={{ flexShrink: 0, marginInlineStart: '12px' }}
             />
           </UiButton>
 
@@ -71,7 +71,7 @@ export function ChooseSetupModeStep({
             </span>
             <MonitorCog
               size={20}
-              style={{ flexShrink: 0, marginLeft: '12px' }}
+              style={{ flexShrink: 0, marginInlineStart: '12px' }}
             />
           </UiButton>
 
@@ -94,7 +94,7 @@ export function ChooseSetupModeStep({
             </span>
             <Cable
               size={20}
-              style={{ flexShrink: 0, marginLeft: '12px' }}
+              style={{ flexShrink: 0, marginInlineStart: '12px' }}
             />
           </UiButton>
 
@@ -112,12 +112,12 @@ export function ChooseSetupModeStep({
             <span style={{ display: 'flex', flexDirection: 'column', gap: '2px', flex: 1 }}>
               <strong>{t('wizard.modeUsbHidSetup', 'Set Up USB HID UPS')}</strong>
               <span className="form-hint">
-                {t('wizard.modeUsbHidSetupDesc', 'Help me configure NUT usbhid-ups with experimental Windows HID support')}
+                {t('wizard.modeUsbHidSetupDesc', 'Help me configure NUT usbhid-ups on Windows with an official NUT release version 2.8.5 or newer')}
               </span>
             </span>
             <Usb
               size={20}
-              style={{ flexShrink: 0, marginLeft: '12px', transform: 'rotate(45deg)' }}
+              style={{ flexShrink: 0, marginInlineStart: '12px', transform: 'rotate(45deg)' }}
             />
           </UiButton>
         </div>

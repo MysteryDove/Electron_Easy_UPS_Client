@@ -114,7 +114,7 @@ export async function validateNutFolder(
     ];
     if (requireUsbHidExperimentalSupport) {
       expectedEntries.push(
-        `${USB_HID_DRIVER_RELATIVE_PATH_CANDIDATES.join(' or ')} (with experimentalhid support)`,
+        `${USB_HID_DRIVER_RELATIVE_PATH_CANDIDATES.join(' or ')} (with winhid support)`,
       );
     }
     console.warn(
@@ -126,7 +126,7 @@ export async function validateNutFolder(
       usbHidExperimentalSupport = false;
       usbHidExperimentalIssueCode = 'FOLDER_EMPTY';
       usbHidExperimentalMessage =
-        'Folder path is empty. Select the extracted experimental NUT build folder.';
+        'Folder path is empty. Select the extracted official NUT 2.8.5 or newer folder.';
     }
 
     return {
@@ -202,10 +202,10 @@ export async function validateNutFolder(
 
     if (!checkResult.supported) {
       missing.push(
-        `${USB_HID_DRIVER_RELATIVE_PATH_CANDIDATES.join(' or ')} with -h output containing "experimentalhid"`,
+        `${USB_HID_DRIVER_RELATIVE_PATH_CANDIDATES.join(' or ')} with -h output containing "winhid"`,
       );
       console.warn(
-        '[nutSetupService] validateNutFolder failed: missing experimental usbhid-ups support',
+        '[nutSetupService] validateNutFolder failed: missing winhid usbhid-ups support',
         {
           folderPath: normalizedFolder,
           message: checkResult.message,
@@ -736,7 +736,7 @@ function buildDriverUpsConf(payload: NormalizedPrepareLocalDriverPayload): strin
 function buildUsbHidUpsConf(payload: NormalizedPrepareUsbHidPayload): string {
   const lines = [
     `[${payload.upsName}]`,
-    '    experimentalhid',
+    '    winhid',
     '    pollonly',
     '    driver = usbhid-ups',
     `    port = ${payload.port}`,
@@ -803,18 +803,18 @@ async function verifyUsbHidExperimentalSupport(folderPath: string): Promise<{
     }
   }
 
-  if (!output.toLowerCase().includes('experimentalhid')) {
+  if (!output.toLowerCase().includes('winhid')) {
     return {
       supported: false,
       issueCode: 'INCOMPATIBLE_WINDOWS_BUILD',
       message:
-        'usbhid-ups.exe is present, but this build is not compatible with Windows USB HID setup (missing required "experimentalhid" support).',
+        'usbhid-ups.exe is present, but this build is not compatible with Windows USB HID setup (missing required "winhid" support).',
     };
   }
 
   return {
     supported: true,
-    message: 'usbhid-ups.exe reports experimentalhid support.',
+    message: 'usbhid-ups.exe reports winhid support.',
   };
 }
 

@@ -81,7 +81,7 @@ export function UsbHidSetupForm({
           readOnly
         />
         <span className="form-hint">
-          {t('wizard.usbHidPortHint', 'Fixed to auto for this experimental Windows build')}
+          {t('wizard.usbHidPortHint', 'Fixed to auto for supported Windows builds in NUT 2.8.5 or newer')}
         </span>
       </div>
 
@@ -146,15 +146,15 @@ export function UsbHidSetupForm({
       )}
 
       <div className="form-row form-row--two" style={{ marginTop: '8px' }}>
-        <label className="form-toggle" htmlFor="wiz-usbhid-experimentalhid">
+        <label className="form-toggle" htmlFor="wiz-usbhid-winhid">
           <UiCheckbox
-            id="wiz-usbhid-experimentalhid"
+            id="wiz-usbhid-winhid"
             checked
             disabled
             readOnly
           />
           <span className="form-toggle-label">
-            {t('wizard.usbHidExperimentalhid', 'experimentalhid')}
+            {t('wizard.usbHidWinhid', 'winhid')}
           </span>
         </label>
 
@@ -174,7 +174,7 @@ export function UsbHidSetupForm({
       <span className="form-hint">
         {t(
           'wizard.usbHidFixedFlagsHint',
-          'experimentalhid and pollonly are currently fixed ON and cannot be changed on Windows.',
+          'winhid and pollonly are currently fixed ON and cannot be changed on Windows.',
         )}
       </span>
     </>

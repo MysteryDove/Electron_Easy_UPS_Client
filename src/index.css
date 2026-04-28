@@ -96,7 +96,7 @@ body,
   width: var(--sidebar-width);
   min-width: var(--sidebar-width);
   background: var(--color-bg-card);
-  border-right: 1px solid var(--color-border);
+  border-inline-end: 1px solid var(--color-border);
   display: flex;
   flex-direction: column;
   padding: 20px 0;
@@ -176,7 +176,7 @@ body,
 .sidebar-link::after {
   content: '';
   position: absolute;
-  left: 4px;
+  inset-inline-start: 4px;
   top: 8px;
   bottom: 8px;
   width: 3px;
@@ -215,7 +215,7 @@ body,
 }
 
 .sidebar--collapsed .sidebar-link::after {
-  left: 50%;
+  inset-inline-start: 50%;
   top: auto;
   bottom: 4px;
   width: 18px;
@@ -481,7 +481,7 @@ body,
 
 .form-range-value {
   min-width: 58px;
-  text-align: right;
+  text-align: end;
   font-size: 0.88rem;
   font-variant-numeric: tabular-nums;
   color: var(--color-text-muted);
@@ -718,7 +718,7 @@ body,
 }
 
 .wizard-com-port-select {
-  padding-right: 30px;
+  padding-inline-end: 30px;
 }
 
 .wizard-folder-row {
@@ -735,13 +735,13 @@ body,
 
 .wizard-combobox-input {
   width: 100%;
-  padding-right: 40px;
+  padding-inline-end: 40px;
 }
 
 .wizard-combobox-button {
   position: absolute;
   top: 4px;
-  right: 4px;
+  inset-inline-end: 4px;
   width: 30px;
   height: 30px;
   border-radius: var(--radius-sm);
@@ -774,8 +774,8 @@ body,
 .wizard-combobox-options {
   position: absolute;
   z-index: 20;
-  left: 0;
-  right: 0;
+  inset-inline-start: 0;
+  inset-inline-end: 0;
   top: calc(100% + 4px);
   max-height: 220px;
   overflow-y: auto;
@@ -976,7 +976,7 @@ body,
   color: var(--color-text);
   font-size: 0.88rem;
   font-weight: 500;
-  text-align: right;
+  text-align: end;
   word-break: break-word;
 }
 
@@ -1106,7 +1106,7 @@ body,
   color: var(--color-text);
   display: flex;
   align-items: center;
-  margin-right: 2px;
+  margin-inline-end: 2px;
 }
 
 .sparkline-value {
@@ -1154,7 +1154,7 @@ body,
   display: flex;
   align-items: center;
   justify-content: space-between;
-  text-align: left;
+  text-align: start;
 }
 
 .dashboard-static-title {
@@ -1220,7 +1220,7 @@ body,
   display: flex;
   align-items: center;
   justify-content: space-between;
-  text-align: left;
+  text-align: start;
 }
 
 .static-group-title-wrap {
@@ -1281,7 +1281,7 @@ body,
 .static-item-value {
   color: var(--color-text);
   font-weight: 500;
-  text-align: right;
+  text-align: end;
   word-break: break-word;
 }
 
@@ -1370,7 +1370,7 @@ body,
   color: #fecaca;
   font-size: 0.84rem;
   line-height: 1.45;
-  text-align: left;
+  text-align: start;
 }
 
 .reconnect-overlay-transition {
@@ -1569,7 +1569,7 @@ body,
 .snackbar {
   position: fixed;
   bottom: 80px;
-  left: 50%;
+  inset-inline-start: 50%;
   transform: translateX(-50%);
   display: flex;
   align-items: center;

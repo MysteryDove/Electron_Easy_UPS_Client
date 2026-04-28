@@ -261,7 +261,10 @@ export function SetupWizardPage() {
   ): string => {
     const selectedPort = normalizeComPort(selectedPortRaw) ?? selectedPortRaw.trim();
     const fallback =
-      result.error ?? 'Failed to configure and start local NUT serial driver';
+      result.error ?? t(
+        'wizard.localSerialDriverStartFailed',
+        'Failed to configure and start local NUT serial driver',
+      );
 
     switch (result.errorCode) {
       case 'SERIAL_COM_PORT_ACCESS':
@@ -295,7 +298,10 @@ export function SetupWizardPage() {
     result: NutSetupPrepareUsbHidResult,
   ): string => {
     const fallback =
-      result.error ?? 'Failed to configure and start local NUT USB HID driver';
+      result.error ?? t(
+        'wizard.localUsbHidStartFailed',
+        'Failed to configure and start local NUT USB HID driver',
+      );
 
     if (hasNoMatchingUsbHidUpsSignal(result.error, result.technicalDetails)) {
       return t(
@@ -337,11 +343,11 @@ export function SetupWizardPage() {
         setMapping(newMapping);
       } else {
         setTestStatus('error');
-        setTestError(result.error ?? 'Connection test failed');
+        setTestError(result.error ?? t('wizard.connectionTestFailed', 'Connection test failed'));
       }
     } catch (err) {
       setTestStatus('error');
-      setTestError(err instanceof Error ? err.message : 'Unexpected error');
+      setTestError(err instanceof Error ? err.message : t('wizard.unexpectedError', 'Unexpected error'));
     }
   }, [host, port, username, password, upsName]);
 
@@ -373,7 +379,7 @@ export function SetupWizardPage() {
       await refreshConfig();
       navigate('/dashboard', { replace: true });
     } catch (err) {
-      setTestError(err instanceof Error ? err.message : 'Failed to save');
+      setTestError(err instanceof Error ? err.message : t('wizard.saveFailed', 'Failed to save'));
       setCompleting(false);
     }
   }, [
@@ -447,7 +453,7 @@ export function SetupWizardPage() {
       });
     } catch (err) {
       setInstallStatus('error');
-      setInstallError(err instanceof Error ? err.message : 'Failed to refresh COM ports');
+      setInstallError(err instanceof Error ? err.message : t('wizard.refreshComPortsFailed', 'Failed to refresh COM ports'));
     }
   }, [mode]);
 
@@ -485,7 +491,7 @@ export function SetupWizardPage() {
         setAvailableComPorts([]);
       }
       setInstallStatus('error');
-      setInstallError(err instanceof Error ? err.message : 'Failed to choose folder');
+      setInstallError(err instanceof Error ? err.message : t('wizard.chooseFolderFailed', 'Failed to choose folder'));
     } finally {
       setValidatingFolder(false);
     }
@@ -529,7 +535,7 @@ export function SetupWizardPage() {
       const result = await prepareLocalNut(payload);
       if (!result.success) {
         setInstallStatus('error');
-        setInstallError(result.error ?? 'Failed to configure and start local NUT');
+        setInstallError(result.error ?? t('wizard.localNutStartFailed', 'Failed to configure and start local NUT'));
         setInstallErrorDetails(result.technicalDetails ?? null);
         return;
       }
@@ -537,7 +543,7 @@ export function SetupWizardPage() {
       handlePrepareLocalSuccess();
     } catch (err) {
       setInstallStatus('error');
-      setInstallError(err instanceof Error ? err.message : 'Failed to configure and start local NUT');
+      setInstallError(err instanceof Error ? err.message : t('wizard.localNutStartFailed', 'Failed to configure and start local NUT'));
       setInstallErrorDetails(err instanceof Error ? err.message : null);
     }
   }, [
@@ -590,7 +596,7 @@ export function SetupWizardPage() {
       handlePrepareLocalSuccess();
     } catch (err) {
       setInstallStatus('error');
-      setInstallError(err instanceof Error ? err.message : 'Failed to configure and start local NUT serial driver');
+      setInstallError(err instanceof Error ? err.message : t('wizard.localSerialDriverStartFailed', 'Failed to configure and start local NUT serial driver'));
       setInstallErrorDetails(err instanceof Error ? err.message : null);
     }
   }, [
@@ -638,7 +644,7 @@ export function SetupWizardPage() {
       handlePrepareLocalSuccess();
     } catch (err) {
       setInstallStatus('error');
-      setInstallError(err instanceof Error ? err.message : 'Failed to configure and start local NUT USB HID driver');
+      setInstallError(err instanceof Error ? err.message : t('wizard.localUsbHidStartFailed', 'Failed to configure and start local NUT USB HID driver'));
       setInstallErrorDetails(err instanceof Error ? err.message : null);
     }
   }, [
@@ -880,7 +886,7 @@ export function SetupWizardPage() {
             </p>
           </div>
 
-          <div className="wizard-form" style={{ overflowY: 'auto', paddingRight: '12px', flex: 1 }}>
+          <div className="wizard-form" style={{ overflowY: 'auto', paddingInlineEnd: '12px', flex: 1 }}>
             {Object.entries(MAPPING_LABELS).map(([key, label]) => (
               <div className="form-group" key={key}>
                 <label className="form-label">{label}</label>

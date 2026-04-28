@@ -53,6 +53,7 @@ import {
   wizardCompletePayloadSchema,
   wizardTestConnectionPayloadSchema,
 } from '../../shared/ipc/schemas';
+import { t } from '../system/i18nService';
 
 let isRegistered = false;
 
@@ -100,8 +101,10 @@ export function registerIpcHandlers(dependencies: IpcHandlerDependencies): void 
 
   ipcMain.handle(IPC_CHANNELS.criticalAlertTest, async () => {
     dependencies.criticalAlertWindow.show({
-      title: 'Test Alert',
-      body: 'This is a test of the critical alert system. Click Dismiss to close.',
+      title: t('criticalAlertWindow.testAlertTitle', { defaultValue: 'Test Alert' }),
+      body: t('criticalAlertWindow.testAlertBody', {
+        defaultValue: 'This is a test of the critical alert system. Click Dismiss to close.',
+      }),
       batteryPct: 5,
       shutdownPct: 20,
       showShutdown: false,
@@ -166,7 +169,9 @@ export function registerIpcHandlers(dependencies: IpcHandlerDependencies): void 
   ipcMain.handle(IPC_CHANNELS.nutSetupChooseFolder, async () => {
     const activeWindow = BrowserWindow.getFocusedWindow() ?? undefined;
     const result = await dialog.showOpenDialog(activeWindow, {
-      title: 'Select extracted NUT folder',
+      title: t('wizard.selectNutFolderDialogTitle', {
+        defaultValue: 'Select extracted NUT folder',
+      }),
       properties: ['openDirectory'],
     });
 
@@ -227,7 +232,11 @@ export function registerIpcHandlers(dependencies: IpcHandlerDependencies): void 
           .find((line) => line.length > 0);
         return {
           success: false,
-          error: firstLine ?? 'Failed to configure and start local NUT',
+          error:
+            firstLine ??
+            t('wizard.localNutStartFailed', {
+              defaultValue: 'Failed to configure and start local NUT',
+            }),
           technicalDetails: buildTechnicalDetails(rawMessage),
         };
       }
@@ -297,8 +306,9 @@ export function registerIpcHandlers(dependencies: IpcHandlerDependencies): void 
         if (hasNoMatchingUsbHidUpsSignal(rawMessage)) {
           return {
             success: false,
-            error:
-              'No matching HID UPS found. Check USB connection and optional VID/PID settings, then retry.',
+            error: t('wizard.usbHidNoMatchingUps', {
+              defaultValue: 'No matching HID UPS found. Check USB cable/power and optional VID/PID settings, then retry.',
+            }),
             technicalDetails: buildUsbHidTechnicalDetails(rawMessage),
           };
         }
@@ -311,7 +321,9 @@ export function registerIpcHandlers(dependencies: IpcHandlerDependencies): void 
           success: false,
           error:
             firstLine ??
-            'Failed to configure and start local NUT USB HID driver',
+            t('wizard.localUsbHidStartFailed', {
+              defaultValue: 'Failed to configure and start local NUT USB HID driver',
+            }),
           technicalDetails: buildUsbHidTechnicalDetails(rawMessage),
         };
       }
@@ -350,7 +362,11 @@ async function handleWizardTestConnection(
     return { success: true, upsDescription: description, variables };
   } catch (error) {
     const message =
-      error instanceof Error ? error.message : 'Unknown connection error';
+      error instanceof Error
+        ? error.message
+        : t('wizard.connectionUnknownError', {
+          defaultValue: 'Unknown connection error',
+        });
     return { success: false, error: message };
   } finally {
     await testClient.close().catch(() => {
