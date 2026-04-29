@@ -586,6 +586,86 @@ describe('BatterySafetyService — policy-driven action application', () => {
     expect(alert.show.mock.calls[0][0].shutdownCountdownSeconds).toBe(30);
   });
 
+  it('records cancellation when a policy countdown is cancelled by power restoration', async () => {
+    const { BatterySafetyService } = await import('./batterySafetyService');
+    const alert = makeMockCriticalAlert();
+    const svc = new BatterySafetyService(
+      makeConfig(makePolicy({
+        action: {
+          type: 'startShutdownCountdown',
+          countdownSeconds: 30,
+          method: 'shutdown',
+        },
+        cancelWhen: {
+          all: [
+            { field: 'ups.online', op: 'eq', value: true },
+            { field: 'ups.fsd', op: 'eq', value: false },
+          ],
+        },
+      })) as never,
+      alert as never,
+    );
+
+    svc.handleTelemetry({ battery_charge_pct: 80 } as never, 'OB');
+    svc.handleTelemetry({ battery_charge_pct: 80 } as never, 'OL');
+    await flushAsyncShutdownWork();
+
+    const log = svc.getDecisionLog();
+    expect(log.some((entry) =>
+      entry.event === 'decision' &&
+      entry.decision.type === 'startShutdownCountdown' &&
+      entry.ruleId === 'advanced-rule',
+    )).toBe(true);
+    expect(log.some((entry) =>
+      entry.event === 'cancellation' &&
+      entry.decision.type === 'cancelShutdownCountdown' &&
+      entry.ruleId === 'advanced-rule',
+    )).toBe(true);
+    expect(alert.dismiss).toHaveBeenCalled();
+  });
+
+  it('applies runtime remaining shutdown only while UPS is on battery', async () => {
+    const { BatterySafetyService } = await import('./batterySafetyService');
+    const alert = makeMockCriticalAlert();
+    const svc = new BatterySafetyService(
+      makeConfig(makePolicy({
+        trigger: {
+          all: [
+            { field: 'ups.onBattery', op: 'eq', value: true },
+            { field: 'battery.runtimeSeconds', op: 'lte', value: 300 },
+          ],
+        },
+        action: {
+          type: 'startShutdownCountdown',
+          countdownSeconds: 30,
+          method: 'shutdown',
+        },
+        cancelWhen: {
+          all: [
+            { field: 'ups.online', op: 'eq', value: true },
+            { field: 'ups.fsd', op: 'eq', value: false },
+          ],
+        },
+      })) as never,
+      alert as never,
+    );
+
+    svc.handleTelemetry({
+      battery_charge_pct: 80,
+      battery_runtime_sec: 120,
+    } as never, 'OL');
+    expect(alert.show).not.toHaveBeenCalled();
+
+    svc.handleTelemetry({
+      battery_charge_pct: 80,
+      battery_runtime_sec: 120,
+    } as never, 'OB');
+
+    expect(alert.show).toHaveBeenCalledTimes(1);
+    expect(alert.show.mock.calls[0][0].showShutdown).toBe(true);
+    expect(alert.show.mock.calls[0][0].shutdownCountdownSeconds).toBe(30);
+  });
+
   it('does not add a shutdown callback to alert-only policy actions', async () => {
     const { BatterySafetyService } = await import('./batterySafetyService');
     const alert = makeMockCriticalAlert();
@@ -641,6 +721,31 @@ describe('BatterySafetyService — policy-driven action application', () => {
     expect(alert.show).not.toHaveBeenCalled();
     expect((svc as unknown as { activeCountdownRuleId: string | null })
       .activeCountdownRuleId).toBeNull();
+  });
+
+  it('records shutdownNow execution results in the policy decision log', async () => {
+    const { BatterySafetyService } = await import('./batterySafetyService');
+    const alert = makeMockCriticalAlert();
+    const svc = new BatterySafetyService(
+      makeConfig(makePolicy({
+        action: {
+          type: 'shutdownNow',
+          method: 'shutdown',
+        },
+      })) as never,
+      alert as never,
+    );
+
+    svc.handleTelemetry({ battery_charge_pct: 80 } as never, 'OB');
+    await flushAsyncShutdownWork();
+
+    const executionEntry = svc.getDecisionLog().find((entry) =>
+      entry.event === 'execution' || entry.event === 'failure',
+    );
+    expect(executionEntry?.decision.type).toBe('shutdownNow');
+    expect(executionEntry?.ruleId).toBe('advanced-rule');
+    expect(executionEntry?.execution?.method).toBe('shutdown');
+    expect(executionEntry?.execution?.supported).toBe(process.platform === 'win32');
   });
 });
 
@@ -759,3 +864,9 @@ describe('BatterySafetyService — LB fallback without battery.charge', () => {
     expect(log[0].context.statusTokens).toEqual(['OB', 'LB', 'DISCHRG']);
   });
 });
+
+async function flushAsyncShutdownWork(): Promise<void> {
+  await Promise.resolve();
+  await Promise.resolve();
+  await Promise.resolve();
+}

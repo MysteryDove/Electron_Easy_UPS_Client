@@ -129,6 +129,108 @@ describe('ShutdownPolicyEngine', () => {
     });
   });
 
+  it('does not emit duplicate countdown decisions while the same countdown is active', () => {
+    const engine = new ShutdownPolicyEngine(makeConfig([
+      makeBatteryCountdownRule(),
+    ]));
+
+    expect(engine.evaluate(makeContext({
+      now: 0,
+      battery: { chargePercent: 10 },
+    })).type).toBe('startShutdownCountdown');
+
+    expect(engine.evaluate(makeContext({
+      now: 1000,
+      battery: { chargePercent: 10 },
+    }))).toEqual({ type: 'none' });
+  });
+
+  it('does not let a lower-ranked shutdown rule override active countdown cancellation', () => {
+    const engine = new ShutdownPolicyEngine(makeConfig([
+      makeBatteryCountdownRule(),
+      makeRule({
+        id: 'lower-online-countdown',
+        priority: 50,
+        severity: 'forced',
+        trigger: { field: 'ups.online', op: 'eq', value: true },
+        action: {
+          type: 'startShutdownCountdown',
+          countdownSeconds: 30,
+          method: 'shutdown',
+        },
+        cancelWhen: null,
+      }),
+    ]));
+
+    expect(engine.evaluate(makeContext({
+      now: 0,
+      battery: { chargePercent: 10 },
+    })).type).toBe('startShutdownCountdown');
+
+    expect(engine.evaluate(makeContext({
+      now: 1000,
+      ups: {
+        online: true,
+        onBattery: false,
+        lowBattery: false,
+        fsd: false,
+        statusTokens: ['OL'],
+      },
+    }))).toEqual({
+      type: 'cancelShutdownCountdown',
+      ruleId: 'battery-countdown',
+      reason: 'All conditions matched',
+    });
+  });
+
+  it('clears an active countdown when an explicit cancel rule wins', () => {
+    const engine = new ShutdownPolicyEngine(makeConfig([
+      makeRule({
+        id: 'manual-countdown',
+        priority: 100,
+        severity: 'critical',
+        action: {
+          type: 'startShutdownCountdown',
+          countdownSeconds: 60,
+          method: 'shutdown',
+        },
+        cancelWhen: null,
+      }),
+      makeRule({
+        id: 'manual-cancel',
+        priority: 200,
+        severity: 'critical',
+        trigger: { field: 'ups.online', op: 'eq', value: true },
+        action: { type: 'cancelShutdownCountdown' },
+      }),
+    ]));
+
+    expect(engine.evaluate(makeContext({ now: 0 }))).toMatchObject({
+      type: 'startShutdownCountdown',
+      ruleId: 'manual-countdown',
+    });
+
+    expect(engine.evaluate(makeContext({
+      now: 1000,
+      ups: {
+        online: true,
+        onBattery: false,
+        lowBattery: false,
+        fsd: false,
+        statusTokens: ['OL'],
+      },
+    }))).toEqual({
+      type: 'cancelShutdownCountdown',
+      ruleId: 'manual-cancel',
+      reason: 'Rule action requested countdown cancellation',
+    });
+
+    expect(engine.evaluate(makeContext({ now: 2000 }))).toMatchObject({
+      type: 'startShutdownCountdown',
+      ruleId: 'manual-countdown',
+    });
+  });
+
   it('lets FSD override an active battery countdown instead of cancelling it', () => {
     const engine = new ShutdownPolicyEngine(makeConfig([
       makeBatteryCountdownRule(),
@@ -184,6 +286,81 @@ describe('ShutdownPolicyEngine', () => {
         statusTokens: ['OL'],
       },
     }))).toEqual({ type: 'none' });
+  });
+
+  it('lets shutdownNow override and clear an active countdown', () => {
+    const engine = new ShutdownPolicyEngine(makeConfig([
+      makeBatteryCountdownRule(),
+      makeFsdImmediateRule(),
+    ]));
+
+    expect(engine.evaluate(makeContext({
+      now: 0,
+      battery: { chargePercent: 10 },
+    }))).toMatchObject({
+      type: 'startShutdownCountdown',
+      ruleId: 'battery-countdown',
+    });
+
+    expect(engine.evaluate(makeContext({
+      now: 1000,
+      ups: {
+        online: true,
+        onBattery: false,
+        lowBattery: false,
+        fsd: true,
+        statusTokens: ['OL', 'FSD'],
+      },
+    }))).toEqual({
+      type: 'shutdownNow',
+      ruleId: 'fsd-immediate',
+      method: 'shutdown',
+    });
+
+    expect(engine.evaluate(makeContext({
+      now: 2000,
+      ups: {
+        online: true,
+        onBattery: false,
+        lowBattery: false,
+        fsd: false,
+        statusTokens: ['OL'],
+      },
+    }))).toEqual({ type: 'none' });
+  });
+
+  it('triggers runtime remaining shutdown only while UPS is on battery', () => {
+    const engine = new ShutdownPolicyEngine(makeConfig([
+      makeRuntimeCountdownRule(),
+    ]));
+
+    expect(engine.evaluate(makeContext({
+      now: 0,
+      ups: {
+        online: true,
+        onBattery: false,
+        lowBattery: false,
+        fsd: false,
+        statusTokens: ['OL'],
+      },
+      battery: { runtimeSeconds: 120 },
+    }))).toEqual({ type: 'none' });
+
+    expect(engine.evaluate(makeContext({
+      now: 1000,
+      battery: { runtimeSeconds: 120 },
+    }))).toEqual({
+      type: 'startShutdownCountdown',
+      ruleId: 'runtime-countdown',
+      countdownSeconds: 45,
+      method: 'sleep',
+      cancelWhen: {
+        all: [
+          { field: 'ups.online', op: 'eq', value: true },
+          { field: 'ups.fsd', op: 'eq', value: false },
+        ],
+      },
+    });
   });
 
   it('only triggers the communication-loss fail-safe when the rule is enabled', () => {
@@ -288,6 +465,45 @@ function makeFsdCountdownRule(): ShutdownPolicyRule {
       method: 'shutdown',
     },
     cancelWhen: null,
+  });
+}
+
+function makeFsdImmediateRule(): ShutdownPolicyRule {
+  return makeRule({
+    id: 'fsd-immediate',
+    priority: 1000,
+    severity: 'forced',
+    trigger: { field: 'ups.fsd', op: 'eq', value: true },
+    action: {
+      type: 'shutdownNow',
+      method: 'shutdown',
+    },
+    cancelWhen: null,
+  });
+}
+
+function makeRuntimeCountdownRule(): ShutdownPolicyRule {
+  return makeRule({
+    id: 'runtime-countdown',
+    priority: 150,
+    severity: 'critical',
+    trigger: {
+      all: [
+        { field: 'ups.onBattery', op: 'eq', value: true },
+        { field: 'battery.runtimeSeconds', op: 'lte', value: 300 },
+      ],
+    },
+    action: {
+      type: 'startShutdownCountdown',
+      countdownSeconds: 45,
+      method: 'sleep',
+    },
+    cancelWhen: {
+      all: [
+        { field: 'ups.online', op: 'eq', value: true },
+        { field: 'ups.fsd', op: 'eq', value: false },
+      ],
+    },
   });
 }
 
