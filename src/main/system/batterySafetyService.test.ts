@@ -1,5 +1,6 @@
 import { describe, expect, it, vi, beforeEach } from 'vitest';
 import { containsFsdToken, containsLbToken, containsObToken } from './batterySafetyService';
+import type { ShutdownPolicyConfig } from '../../shared/shutdownPolicy/types';
 
 // Mock Electron's Notification (imported by batterySafetyService)
 vi.mock('electron', () => ({
@@ -180,6 +181,36 @@ describe('BatterySafetyService — FSD shutdown is irrevocable', () => {
     };
   }
 
+  function makeFsdCountdownPolicy(): ShutdownPolicyConfig {
+    return {
+      version: 1,
+      mode: 'advanced',
+      safety: {
+        requireHoldForShutdownSeconds: 0,
+        maxCountdownSeconds: 300,
+        allowImmediateShutdown: false,
+        allowFsdAutoCancel: false,
+      },
+      rules: [
+        {
+          id: 'default-fsd-shutdown',
+          name: 'FSD policy countdown',
+          enabled: true,
+          priority: 1000,
+          severity: 'forced',
+          trigger: { field: 'ups.fsd', op: 'eq', value: true },
+          action: {
+            type: 'startShutdownCountdown',
+            countdownSeconds: 12,
+            method: 'shutdown',
+          },
+          cancelWhen: null,
+          createdBy: 'user',
+        },
+      ],
+    };
+  }
+
   function makeMockCriticalAlert() {
     return {
       show: vi.fn(),
@@ -245,7 +276,7 @@ describe('BatterySafetyService — FSD shutdown is irrevocable', () => {
     expect(mockAlert.show).toHaveBeenCalledTimes(1);
   });
 
-  it('calls initiateWindowsShutdown directly when overlay is disabled', async () => {
+  it('executes generated FSD shutdownNow without showing an overlay', async () => {
     const { BatterySafetyService } = await import('./batterySafetyService');
     const alert = makeMockCriticalAlert();
     const svc = new BatterySafetyService(
@@ -253,10 +284,27 @@ describe('BatterySafetyService — FSD shutdown is irrevocable', () => {
       alert as never,
     );
 
-    // We can't easily assert the shutdown exec, but we can verify overlay
-    // was NOT shown (the shutdown fires directly instead)
+    // The migrated policy uses shutdownNow for this legacy setting.
     svc.handleTelemetry({ battery_charge_pct: 80 } as never, 'FSD');
     expect(alert.show).not.toHaveBeenCalled();
+  });
+
+  it('honors a policy FSD countdown even when the legacy overlay flag is disabled', async () => {
+    const { BatterySafetyService } = await import('./batterySafetyService');
+    const alert = makeMockCriticalAlert();
+    const svc = new BatterySafetyService(
+      {
+        ...makeConfig({ overlayEnabled: false }),
+        shutdownPolicy: makeFsdCountdownPolicy(),
+      } as never,
+      alert as never,
+    );
+
+    svc.handleTelemetry({ battery_charge_pct: 80 } as never, 'FSD');
+
+    expect(alert.show).toHaveBeenCalledTimes(1);
+    expect(alert.show.mock.calls[0][0].showShutdown).toBe(true);
+    expect(alert.show.mock.calls[0][0].shutdownCountdownSeconds).toBe(12);
   });
 
   it('user dismiss resets FSD state, allowing re-trigger on next FSD', () => {
@@ -364,18 +412,17 @@ describe('BatterySafetyService — OB/OL gating', () => {
     service.handleTelemetry({ battery_charge_pct: 80 } as never, 'OB');
     service.handleTelemetry({ battery_charge_pct: 15 } as never, 'OB DISCHRG LB');
 
-    // 80→15 crosses both warningPct (40) and shutdownPct (20):
-    // first show() for warning overlay, then dismissed and second show() for critical
-    expect(mockAlert.show).toHaveBeenCalledTimes(2);
-    expect(mockAlert.show.mock.calls[0][0].type).toBe('warning');
-    expect(mockAlert.show.mock.calls[1][0].type).toBe('critical');
+    // The engine emits the highest-priority matching rule only.
+    expect(mockAlert.show).toHaveBeenCalledTimes(1);
+    expect(mockAlert.show.mock.calls[0][0].type).toBe('critical');
+    expect(mockAlert.show.mock.calls[0][0].shutdownCountdownSeconds).toBe(45);
   });
 
   it('cancels shutdown countdown when UPS transitions from OB to OL', () => {
     // On battery, battery drops below shutdown threshold
     service.handleTelemetry({ battery_charge_pct: 80 } as never, 'OB');
     service.handleTelemetry({ battery_charge_pct: 15 } as never, 'OB DISCHRG LB');
-    expect(mockAlert.show).toHaveBeenCalledTimes(2);
+    expect(mockAlert.show).toHaveBeenCalledTimes(1);
 
     mockAlert.dismiss.mockClear();
 
@@ -389,7 +436,7 @@ describe('BatterySafetyService — OB/OL gating', () => {
   it('still cancels shutdown countdown when an intermediate poll omits ups.status', () => {
     service.handleTelemetry({ battery_charge_pct: 80 } as never, 'OB');
     service.handleTelemetry({ battery_charge_pct: 15 } as never, 'OB DISCHRG LB');
-    expect(mockAlert.show).toHaveBeenCalledTimes(2);
+    expect(mockAlert.show).toHaveBeenCalledTimes(1);
 
     mockAlert.dismiss.mockClear();
 
@@ -402,7 +449,7 @@ describe('BatterySafetyService — OB/OL gating', () => {
     expect(mockAlert.dismiss).toHaveBeenCalledTimes(1);
   });
 
-  it('resets warned/shutdownWarned on OB→OL so warnings re-trigger if power fails again', () => {
+  it('re-arms policy alerts on OB→OL so warnings re-trigger if power fails again', () => {
     // On battery → warning triggered
     service.handleTelemetry({ battery_charge_pct: 80 } as never, 'OB');
     service.handleTelemetry({ battery_charge_pct: 30 } as never, 'OB DISCHRG');
@@ -450,6 +497,152 @@ describe('BatterySafetyService — OB/OL gating', () => {
 });
 
 // ── LB fallback when battery.charge is unavailable ──────────────────
+
+describe('BatterySafetyService — policy-driven action application', () => {
+  function makeConfig(shutdownPolicy: unknown) {
+    return {
+      battery: {
+        warningPct: 40,
+        shutdownPct: 20,
+        warningToastEnabled: false,
+        shutdownEnabled: false,
+        criticalAlertEnabled: false,
+        criticalShutdownAlertEnabled: false,
+        shutdownCountdownSeconds: 45,
+        shutdownMethod: 'sleep' as const,
+      },
+      fsd: {
+        shutdownEnabled: false,
+        shutdownDelaySeconds: 10,
+        shutdownMethod: 'shutdown' as const,
+        overlayEnabled: true,
+      },
+      shutdownPolicy,
+      nut: {} as never,
+      polling: {} as never,
+      data: {} as never,
+      debug: { level: 'off' } as never,
+      startup: {} as never,
+      theme: {} as never,
+      i18n: {} as never,
+      dashboard: {} as never,
+      wizard: {} as never,
+      line: {} as never,
+    };
+  }
+
+  function makePolicy(rule: Record<string, unknown>) {
+    return {
+      version: 1,
+      mode: 'advanced',
+      safety: {
+        requireHoldForShutdownSeconds: 0,
+        maxCountdownSeconds: 300,
+        allowImmediateShutdown: true,
+        allowFsdAutoCancel: false,
+      },
+      rules: [
+        {
+          id: 'advanced-rule',
+          name: 'Advanced rule',
+          enabled: true,
+          priority: 100,
+          severity: 'critical',
+          trigger: { field: 'ups.onBattery', op: 'eq', value: true },
+          createdBy: 'user',
+          ...rule,
+        },
+      ],
+    };
+  }
+
+  function makeMockCriticalAlert() {
+    return {
+      show: vi.fn(),
+      dismiss: vi.fn(),
+      isShowing: false,
+    };
+  }
+
+  it('starts an advanced countdown even when legacy battery shutdown is disabled', async () => {
+    const { BatterySafetyService } = await import('./batterySafetyService');
+    const alert = makeMockCriticalAlert();
+    const svc = new BatterySafetyService(
+      makeConfig(makePolicy({
+        action: {
+          type: 'startShutdownCountdown',
+          countdownSeconds: 30,
+          method: 'shutdown',
+        },
+        cancelWhen: null,
+      })) as never,
+      alert as never,
+    );
+
+    svc.handleTelemetry({ battery_charge_pct: 80 } as never, 'OB');
+
+    expect(alert.show).toHaveBeenCalledTimes(1);
+    expect(alert.show.mock.calls[0][0].showShutdown).toBe(true);
+    expect(alert.show.mock.calls[0][0].shutdownCountdownSeconds).toBe(30);
+  });
+
+  it('does not add a shutdown callback to alert-only policy actions', async () => {
+    const { BatterySafetyService } = await import('./batterySafetyService');
+    const alert = makeMockCriticalAlert();
+    const svc = new BatterySafetyService(
+      makeConfig(makePolicy({
+        action: { type: 'showCriticalAlert' },
+      })) as never,
+      alert as never,
+    );
+
+    svc.handleTelemetry({ battery_charge_pct: 80 } as never, 'OB');
+
+    expect(alert.show).toHaveBeenCalledTimes(1);
+    expect(alert.show.mock.calls[0][0].showShutdown).toBe(false);
+    expect(alert.show.mock.calls[0][1]).toBeUndefined();
+  });
+
+  it('re-arms custom alert-only rules after their policy trigger clears', async () => {
+    const { BatterySafetyService } = await import('./batterySafetyService');
+    const alert = makeMockCriticalAlert();
+    const svc = new BatterySafetyService(
+      makeConfig(makePolicy({
+        action: { type: 'showCriticalAlert' },
+      })) as never,
+      alert as never,
+    );
+
+    svc.handleTelemetry({ battery_charge_pct: 80 } as never, 'OB');
+    expect(alert.show).toHaveBeenCalledTimes(1);
+
+    svc.handleTelemetry({ battery_charge_pct: 80 } as never, 'OL');
+    alert.show.mockClear();
+
+    svc.handleTelemetry({ battery_charge_pct: 80 } as never, 'OB');
+    expect(alert.show).toHaveBeenCalledTimes(1);
+  });
+
+  it('executes shutdownNow without marking an active countdown', async () => {
+    const { BatterySafetyService } = await import('./batterySafetyService');
+    const alert = makeMockCriticalAlert();
+    const svc = new BatterySafetyService(
+      makeConfig(makePolicy({
+        action: {
+          type: 'shutdownNow',
+          method: 'shutdown',
+        },
+      })) as never,
+      alert as never,
+    );
+
+    svc.handleTelemetry({ battery_charge_pct: 80 } as never, 'OB');
+
+    expect(alert.show).not.toHaveBeenCalled();
+    expect((svc as unknown as { activeCountdownRuleId: string | null })
+      .activeCountdownRuleId).toBeNull();
+  });
+});
 
 describe('BatterySafetyService — LB fallback without battery.charge', () => {
   function makeConfig(batteryOverrides: Record<string, unknown> = {}) {
@@ -504,10 +697,9 @@ describe('BatterySafetyService — LB fallback without battery.charge', () => {
   it('triggers shutdown when OB LB is reported without battery.charge', () => {
     service.handleTelemetry({} as never, 'OB LB DISCHRG');
 
-    // Both warning (shutdownPct <= warningPct) and critical alerts should fire
-    expect(mockAlert.show).toHaveBeenCalledTimes(2);
-    expect(mockAlert.show.mock.calls[0][0].type).toBe('warning');
-    expect(mockAlert.show.mock.calls[1][0].type).toBe('critical');
+    expect(mockAlert.show).toHaveBeenCalledTimes(1);
+    expect(mockAlert.show.mock.calls[0][0].type).toBe('critical');
+    expect(mockAlert.show.mock.calls[0][0].shutdownCountdownSeconds).toBe(45);
   });
 
   it('does NOT trigger on OB alone without battery.charge (no LB)', () => {
@@ -524,7 +716,7 @@ describe('BatterySafetyService — LB fallback without battery.charge', () => {
 
   it('cancels LB-triggered shutdown when UPS transitions to OL', () => {
     service.handleTelemetry({} as never, 'OB LB DISCHRG');
-    expect(mockAlert.show).toHaveBeenCalledTimes(2);
+    expect(mockAlert.show).toHaveBeenCalledTimes(1);
 
     mockAlert.dismiss.mockClear();
 
@@ -536,7 +728,7 @@ describe('BatterySafetyService — LB fallback without battery.charge', () => {
   it('re-triggers LB warning after OB→OL→OB cycle without battery.charge', () => {
     // First OB LB triggers shutdown
     service.handleTelemetry({} as never, 'OB LB');
-    expect(mockAlert.show).toHaveBeenCalledTimes(2);
+    expect(mockAlert.show).toHaveBeenCalledTimes(1);
 
     // Power returns
     service.handleTelemetry({} as never, 'OL CHRG');
@@ -544,14 +736,26 @@ describe('BatterySafetyService — LB fallback without battery.charge', () => {
 
     // Power fails again with LB
     service.handleTelemetry({} as never, 'OB LB');
-    expect(mockAlert.show).toHaveBeenCalledTimes(2);
+    expect(mockAlert.show).toHaveBeenCalledTimes(1);
   });
 
   it('uses shutdownPct as the synthesized battery percent in the alert', () => {
     service.handleTelemetry({} as never, 'OB LB DISCHRG');
 
     // The critical alert should show shutdownPct as the battery percent
-    const criticalCall = mockAlert.show.mock.calls[1][0];
+    const criticalCall = mockAlert.show.mock.calls[0][0];
     expect(criticalCall.batteryPct).toBe(20);
+  });
+
+  it('records applied policy decisions with condition explanations', () => {
+    service.handleTelemetry({} as never, 'OB LB DISCHRG');
+
+    const log = service.getDecisionLog();
+    expect(log.length).toBeGreaterThanOrEqual(1);
+    expect(log[0].decision.type).toBe('startShutdownCountdown');
+    expect(log[0].conditionExplanation?.some((line) =>
+      line.includes('ups.onBattery eq matched'),
+    )).toBe(true);
+    expect(log[0].context.statusTokens).toEqual(['OB', 'LB', 'DISCHRG']);
   });
 });

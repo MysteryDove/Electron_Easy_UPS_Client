@@ -32,6 +32,7 @@ type RuntimeCleanupState = {
   nutPollingService: NutPollingService | null;
   wizardProvisioningService: WizardProvisioningService | null;
   trayService: TrayService | null;
+  batterySafetyService: BatterySafetyService | null;
   unsubscribeTelemetryListener: (() => void) | null;
   unsubscribeConnectionListener: (() => void) | null;
 };
@@ -44,6 +45,7 @@ const cleanupState: RuntimeCleanupState = {
   nutPollingService: null,
   wizardProvisioningService: null,
   trayService: null,
+  batterySafetyService: null,
   unsubscribeTelemetryListener: null,
   unsubscribeConnectionListener: null,
 };
@@ -95,6 +97,7 @@ async function initializeRuntime(): Promise<MainProcessRuntime> {
       initialConfig,
       criticalAlertWindow,
     );
+    cleanupState.batterySafetyService = batterySafetyService;
     const lineAlertService = new LineAlertService(initialConfig);
     const latestTelemetryPoint = await telemetryRepository.getLatestTelemetryPoint();
     if (latestTelemetryPoint) {
@@ -130,12 +133,14 @@ async function initializeRuntime(): Promise<MainProcessRuntime> {
     const unsubscribeConnectionListener = nutPollingService.onConnectionStateChanged(
       (state) => {
         trayService.handleConnectionState(state);
+        batterySafetyService.handleConnectionState(state);
       },
     );
     cleanupState.unsubscribeConnectionListener = unsubscribeConnectionListener;
 
     trayService.start(initialConfig);
     trayService.handleConnectionState(nutPollingService.getState());
+    batterySafetyService.handleConnectionState(nutPollingService.getState());
     runtimeConfigCoordinator.initialize(initialConfig);
 
     // Re-apply startup registration so the --autostart flag is present in the
@@ -152,6 +157,7 @@ async function initializeRuntime(): Promise<MainProcessRuntime> {
       wizardProvisioningService,
       runtimeConfigCoordinator,
       criticalAlertWindow,
+      batterySafetyService,
     });
 
     retentionService.start();
@@ -192,6 +198,9 @@ function performShutdown(): Promise<void> {
 
     cleanupState.trayService?.stop();
     cleanupState.trayService = null;
+
+    cleanupState.batterySafetyService?.stop();
+    cleanupState.batterySafetyService = null;
 
     cleanupState.retentionService?.stop();
     cleanupState.retentionService = null;

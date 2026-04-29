@@ -20,6 +20,7 @@ import {
   type NutSetupValidateFolderResult,
   type NutStateSnapshot,
   type QueryRangePayload,
+  type ShutdownPolicyDecisionLogEntry,
   type SystemOpenExternalPayload,
   type TelemetryDataPoint,
   type TelemetryMinMaxRangePayload,
@@ -89,6 +90,10 @@ const electronApi = {
   criticalAlert: {
     test: (): Promise<void> =>
       ipcRenderer.invoke(IPC_CHANNELS.criticalAlertTest),
+  },
+  shutdownPolicy: {
+    getDecisionLog: (): Promise<ShutdownPolicyDecisionLogEntry[]> =>
+      ipcRenderer.invoke(IPC_CHANNELS.shutdownPolicyGetDecisionLog),
   },
   system: {
     openExternal: (payload: SystemOpenExternalPayload): Promise<void> =>
