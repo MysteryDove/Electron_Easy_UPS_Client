@@ -212,7 +212,7 @@
         "fsdAlertBody": "UPS sistem için Zorunlu Kapanma (FSD) sinyali gönderdi. Sistem birazdan kapatılacak.",
         "shutdownCommandFailedTitle": "Kapatma başarısız",
         "shutdownCommandFailedBody": "Yapılandırılan kapatma işlemi tamamlanamadı: {{reason}}",
-        "policyWarningTitle": "UPS politika uyardışı",
+        "policyWarningTitle": "UPS politika uyarısı",
         "policyWarningBody": "Politika kuralı \"{{rule}}\" eşleşti.",
         "policyCriticalAlertTitle": "UPS politika alarmı",
         "policyCriticalAlertBody": "Politika kuralı \"{{rule}}\" eşleşti.",

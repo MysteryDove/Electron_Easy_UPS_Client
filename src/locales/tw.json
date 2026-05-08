@@ -300,7 +300,7 @@
         "policyCondition": "條件",
         "policyField": "欄位",
         "policyOperator": "運算子",
-        "policyValue": "値",
+        "policyValue": "值",
         "policyRequireOnBattery": "要求 UPS 使用電池供電",
         "policySimulator": "政策模擬器",
         "policySimulatorStatus": "UPS 狀態",
