@@ -295,7 +295,7 @@ function simplePolicyRequiresImmediateShutdown(
 ): boolean {
   return (
     (input.battery.shutdownEnabled && !input.battery.criticalShutdownAlertEnabled) ||
-    !input.fsd.overlayEnabled
+    (input.fsd.shutdownEnabled && !input.fsd.overlayEnabled)
   );
 }
 
