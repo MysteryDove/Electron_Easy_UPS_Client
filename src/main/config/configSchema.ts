@@ -1,4 +1,11 @@
 import { z } from 'zod';
+import {
+  defaultShutdownPolicyConfig,
+  shutdownPolicyPatchSchema,
+  shutdownPolicySchema,
+} from '../shutdown/schema/shutdownPolicySchema';
+import { migrateLegacyShutdownPolicyConfig } from '../shutdown/ShutdownPolicyMigration';
+import type { ShutdownPolicyConfig } from '../../shared/shutdownPolicy/types';
 
 const widgetConfigSchema = z
   .object({
@@ -143,6 +150,7 @@ export const appConfigSchema = z
     wizard: wizardConfigSchema,
     line: lineConfigSchema,
     fsd: fsdConfigSchema,
+    shutdownPolicy: shutdownPolicySchema,
   })
   .strict();
 
@@ -160,12 +168,31 @@ const appConfigPatchSchema = z
     wizard: wizardConfigSchema.partial().optional(),
     line: lineConfigSchema.partial().optional(),
     fsd: fsdConfigSchema.partial().optional(),
+    shutdownPolicy: shutdownPolicyPatchSchema.optional(),
   })
   .strict();
 
 export type AppConfig = z.infer<typeof appConfigSchema>;
 export type AppConfigPatch = z.infer<typeof appConfigPatchSchema>;
 export type DebugLogLevel = z.infer<typeof debugLogLevelSchema>;
+
+const defaultBatteryConfig: AppConfig['battery'] = {
+  warningPct: 40,
+  shutdownPct: 20,
+  warningToastEnabled: true,
+  shutdownEnabled: false,
+  criticalAlertEnabled: true,
+  criticalShutdownAlertEnabled: true,
+  shutdownCountdownSeconds: 45,
+  shutdownMethod: 'sleep',
+};
+
+const defaultFsdConfig: AppConfig['fsd'] = {
+  shutdownEnabled: false,
+  shutdownDelaySeconds: 45,
+  shutdownMethod: 'sleep',
+  overlayEnabled: true,
+};
 
 export const defaultAppConfig: AppConfig = {
   nut: {
@@ -195,16 +222,7 @@ export const defaultAppConfig: AppConfig = {
   data: {
     retentionDays: 30,
   },
-  battery: {
-    warningPct: 40,
-    shutdownPct: 20,
-    warningToastEnabled: true,
-    shutdownEnabled: false,
-    criticalAlertEnabled: true,
-    criticalShutdownAlertEnabled: true,
-    shutdownCountdownSeconds: 45,
-    shutdownMethod: 'sleep',
-  },
+  battery: defaultBatteryConfig,
   debug: {
     level: 'info',
   },
@@ -234,12 +252,11 @@ export const defaultAppConfig: AppConfig = {
     alertEnabled: false,
     alertCooldownMinutes: 5,
   },
-  fsd: {
-    shutdownEnabled: false,
-    shutdownDelaySeconds: 45,
-    shutdownMethod: 'sleep',
-    overlayEnabled: true,
-  },
+  fsd: defaultFsdConfig,
+  shutdownPolicy: migrateLegacyShutdownPolicyConfig({
+    battery: defaultBatteryConfig,
+    fsd: defaultFsdConfig,
+  }, defaultShutdownPolicyConfig),
 };
 
 export function parseConfigPatch(payload: unknown): AppConfigPatch {
@@ -282,7 +299,36 @@ export function applyConfigPatch(
       : current.wizard,
     line: patch.line ? { ...current.line, ...patch.line } : current.line,
     fsd: patch.fsd ? { ...current.fsd, ...patch.fsd } : current.fsd,
+    shutdownPolicy: patch.shutdownPolicy
+      ? {
+        ...current.shutdownPolicy,
+        ...patch.shutdownPolicy,
+        safety: patch.shutdownPolicy.safety
+          ? {
+            ...current.shutdownPolicy.safety,
+            ...patch.shutdownPolicy.safety,
+          }
+          : current.shutdownPolicy.safety,
+        rules: patch.shutdownPolicy.rules
+          ? [...patch.shutdownPolicy.rules]
+          : current.shutdownPolicy.rules,
+      }
+      : current.shutdownPolicy,
   };
+
+  if (
+    !patch.shutdownPolicy &&
+    (patch.battery || patch.fsd) &&
+    current.shutdownPolicy.mode === 'simple'
+  ) {
+    merged.shutdownPolicy = migrateLegacyShutdownPolicyConfig(
+      {
+        battery: merged.battery,
+        fsd: merged.fsd,
+      },
+      current.shutdownPolicy as ShutdownPolicyConfig,
+    );
+  }
 
   return appConfigSchema.parse(merged);
 }
@@ -293,5 +339,29 @@ export function normalizeStoredConfig(payload: unknown): AppConfig {
     return defaultAppConfig;
   }
 
-  return applyConfigPatch(defaultAppConfig, patchResult.data);
+  let normalized: AppConfig;
+  try {
+    normalized = applyConfigPatch(defaultAppConfig, patchResult.data);
+  } catch {
+    return defaultAppConfig;
+  }
+  if (hasShutdownPolicy(payload)) {
+    return normalized;
+  }
+
+  return appConfigSchema.parse({
+    ...normalized,
+    shutdownPolicy: migrateLegacyShutdownPolicyConfig({
+      battery: normalized.battery,
+      fsd: normalized.fsd,
+    }),
+  });
+}
+
+function hasShutdownPolicy(payload: unknown): boolean {
+  return (
+    payload !== null &&
+    typeof payload === 'object' &&
+    Object.prototype.hasOwnProperty.call(payload, 'shutdownPolicy')
+  );
 }

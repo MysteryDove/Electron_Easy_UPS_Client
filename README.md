@@ -102,6 +102,11 @@ The application stores settings locally using `electron-store`. You can reset al
 npm run start:reset-settings
 ```
 
+Shutdown behavior is controlled by the policy system in Settings. See
+[the shutdown policy user guide](docs/SHUTDOWN_POLICY_USER_GUIDE.md),
+[the policy architecture notes](docs/SHUTDOWN_POLICY_ARCHITECTURE.md), and
+[the release checklist](docs/SHUTDOWN_POLICY_RELEASE_CHECKLIST.md) for details.
+
 ## License
 
 This project is licensed under the GPLv2 License - see the [package.json](package.json) file for details.

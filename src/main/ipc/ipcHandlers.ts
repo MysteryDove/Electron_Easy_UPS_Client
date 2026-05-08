@@ -9,6 +9,7 @@ import type {
 import { NutClient } from '../nut/nutClient';
 import type { NutPollingService } from '../nut/nutPollingService';
 import type { WizardProvisioningService } from '../nut/wizardProvisioningService';
+import type { BatterySafetyService } from '../system/batterySafetyService';
 import {
   TELEMETRY_COLUMNS,
   type TelemetryColumn,
@@ -64,6 +65,7 @@ export type IpcHandlerDependencies = {
   wizardProvisioningService: WizardProvisioningService;
   runtimeConfigCoordinator: RuntimeConfigCoordinator;
   criticalAlertWindow: CriticalAlertWindow;
+  batterySafetyService: BatterySafetyService;
 };
 
 export function registerIpcHandlers(dependencies: IpcHandlerDependencies): void {
@@ -110,6 +112,10 @@ export function registerIpcHandlers(dependencies: IpcHandlerDependencies): void 
       showShutdown: false,
     });
   });
+
+  ipcMain.handle(IPC_CHANNELS.shutdownPolicyGetDecisionLog, async () =>
+    dependencies.batterySafetyService.getDecisionLog(),
+  );
 
   ipcMain.handle(IPC_CHANNELS.telemetryGetAvailableColumns, async () =>
     dependencies.telemetryRepository.getAvailableColumns(),

@@ -24,6 +24,7 @@ export {
   type QueryRangePayload,
   type RendererInvokeChannel,
   type RendererInvokeMap,
+  type ShutdownPolicyDecisionLogEntry,
   type SystemOpenExternalPayload,
   type TelemetryDataPoint,
   type TelemetryMinMaxRangePayload,

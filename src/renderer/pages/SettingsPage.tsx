@@ -6,6 +6,8 @@ import { Sun, Moon, Monitor, CheckCircle2, XCircle, Plug } from 'lucide-react';
 import { useNavigate } from 'react-router-dom';
 import { createPortal } from 'react-dom';
 import { UiButton, UiCheckbox, UiInput, UiSelect } from '../components/ui';
+import { ShutdownPolicySettingsSection } from '../features/shutdownPolicy/ShutdownPolicySettingsSection';
+import type { ShutdownPolicyConfig } from '../../shared/shutdownPolicy/types';
 
 type ShutdownMethod = 'sleep' | 'shutdown';
 type ThemeMode = 'light' | 'dark' | 'system';
@@ -288,6 +290,40 @@ export function SettingsPage() {
             }
         },
         [buildDraft, refreshConfig, t],
+    );
+
+    const persistShutdownPolicy = useCallback(
+        async (shutdownPolicy: ShutdownPolicyConfig) => {
+            setSaving(true);
+            if (saveMessageTimerRef.current) {
+                clearTimeout(saveMessageTimerRef.current);
+                saveMessageTimerRef.current = null;
+            }
+
+            try {
+                await electronApi.settings.update({ shutdownPolicy });
+                await refreshConfig();
+                setSaveMessage({ type: 'success', text: t('settings.saveSuccess') });
+                saveMessageTimerRef.current = setTimeout(() => {
+                    setSaveMessage(null);
+                    saveMessageTimerRef.current = null;
+                }, 3000);
+            } catch (err) {
+                setSaveMessage({
+                    type: 'error',
+                    text: err instanceof Error
+                        ? t(
+                            'settings.saveFailedWithReason',
+                            'Failed to save settings: {{reason}}',
+                            { reason: err.message },
+                        )
+                        : t('settings.saveFailed'),
+                });
+            } finally {
+                setSaving(false);
+            }
+        },
+        [refreshConfig, t],
     );
 
     const handleEnterWizard = useCallback(async () => {
@@ -758,6 +794,27 @@ export function SettingsPage() {
                         </div>
                     </div>
                 </section>
+
+                <ShutdownPolicySettingsSection
+                    config={config}
+                    batterySettings={{
+                        warningPct,
+                        shutdownPct,
+                        warningToastEnabled,
+                        shutdownEnabled,
+                        shutdownMethod,
+                        shutdownCountdownSeconds,
+                        criticalAlertEnabled,
+                        criticalShutdownAlertEnabled,
+                    }}
+                    fsdSettings={{
+                        shutdownEnabled: fsdShutdownEnabled,
+                        shutdownDelaySeconds: fsdShutdownDelaySeconds,
+                        shutdownMethod: fsdShutdownMethod,
+                        overlayEnabled: fsdOverlayEnabled,
+                    }}
+                    onSave={persistShutdownPolicy}
+                />
 
                 {/* Startup */}
                 <section className="settings-section">

@@ -1,7 +1,9 @@
 import type { AppConfig, AppConfigPatch } from '../config/types';
+import type { ShutdownPolicyDecisionLogEntry } from '../shutdownPolicy/types';
 import type { TelemetryColumn } from '../telemetry/types';
 
 export type { AppConfig, AppConfigPatch } from '../config/types';
+export type { ShutdownPolicyDecisionLogEntry } from '../shutdownPolicy/types';
 export type { TelemetryColumn } from '../telemetry/types';
 
 export const IPC_CHANNELS = {
@@ -25,6 +27,7 @@ export const IPC_CHANNELS = {
   nutGetState: 'nut:get-state',
   nutRetryLocalDriverLaunch: 'nut:retry-local-driver-launch',
   criticalAlertTest: 'critical-alert:test',
+  shutdownPolicyGetDecisionLog: 'shutdown-policy:get-decision-log',
 } as const;
 
 export const IPC_EVENTS = {
@@ -337,6 +340,10 @@ export type RendererInvokeMap = {
   [IPC_CHANNELS.nutRetryLocalDriverLaunch]: {
     request: void;
     response: NutRetryLocalDriverLaunchResult;
+  };
+  [IPC_CHANNELS.shutdownPolicyGetDecisionLog]: {
+    request: void;
+    response: ShutdownPolicyDecisionLogEntry[];
   };
 };
 
