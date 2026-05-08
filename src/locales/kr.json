@@ -302,7 +302,7 @@
         "policyOperator": "연산자",
         "policyValue": "값",
         "policyRequireOnBattery": "UPS 배터리 동작 필요",
-        "policySimulator": "정책 시민레이터",
+        "policySimulator": "정책 시뮬레이터",
         "policySimulatorStatus": "UPS 상태",
         "policySimulatorCharge": "배터리 충전량 (%)",
         "policySimulatorRuntime": "잔여 런타임 (초)",
