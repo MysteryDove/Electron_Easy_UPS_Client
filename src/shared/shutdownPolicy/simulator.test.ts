@@ -127,6 +127,84 @@ describe('shutdown policy simulator and explanations', () => {
       countdownSeconds: 30,
     });
   });
+
+  describe('hold-time inference for numeric duration fields', () => {
+    it('blocks a connection-loss rule when hold is not yet met', () => {
+      const rule = makeRule({
+        trigger: {
+          field: 'connection.secondsSinceLastSuccessfulPoll',
+          op: 'gte',
+          value: 60,
+        },
+        holdForSeconds: 30,
+        action: { type: 'showWarning' },
+      });
+
+      const result = simulateShutdownPolicy(
+        makeConfig([rule]),
+        makeContext({
+          connection: { state: 'connected', secondsSinceLastSuccessfulPoll: 10 },
+        }),
+      );
+
+      expect(result.decision).toEqual({ type: 'none' });
+      expect(result.ruleResults[0].matched).toBe(false);
+    });
+
+    it('matches a connection-loss rule when hold is satisfied', () => {
+      const rule = makeRule({
+        trigger: {
+          field: 'connection.secondsSinceLastSuccessfulPoll',
+          op: 'gte',
+          value: 60,
+        },
+        holdForSeconds: 30,
+        action: { type: 'showWarning' },
+      });
+
+      const result = simulateShutdownPolicy(
+        makeConfig([rule]),
+        makeContext({
+          connection: { state: 'connected', secondsSinceLastSuccessfulPoll: 90 },
+        }),
+      );
+
+      expect(result.ruleResults[0].matched).toBe(true);
+    });
+
+    it('infers hold duration from state.secondsOnBattery numeric field', () => {
+      const rule = makeRule({
+        trigger: { field: 'state.secondsOnBattery', op: 'gte', value: 10 },
+        holdForSeconds: 60,
+        action: { type: 'showWarning' },
+      });
+
+      const result = simulateShutdownPolicy(
+        makeConfig([rule]),
+        makeContext({ state: { secondsOnBattery: 20, secondsOnline: 0, secondsLowBattery: 0, secondsInFsd: 0 } }),
+      );
+
+      expect(result.ruleResults[0].matched).toBe(false);
+      expect(result.ruleResults[0].condition.reason).toContain('20s/60s');
+    });
+
+    it('conservatively fails hold when trigger field has no duration mapping', () => {
+      const rule = makeRule({
+        trigger: { field: 'battery.chargePercent', op: 'lte', value: 50 },
+        holdForSeconds: 10,
+        action: { type: 'showWarning' },
+      });
+
+      const result = simulateShutdownPolicy(
+        makeConfig([rule]),
+        makeContext({ battery: { chargePercent: 20 } }),
+      );
+
+      expect(result.ruleResults[0].matched).toBe(false);
+      expect(result.ruleResults[0].skippedReason).toBe('hold');
+      expect(result.ruleResults[0].condition.reason).toContain('0s/10s');
+    });
+  });
 });
 
 function makeConfig(rules: ShutdownPolicyRule[]): ShutdownPolicyConfig {

@@ -234,7 +234,49 @@ function inferMatchedDurationSeconds(
     return context.state.secondsOnline;
   }
 
-  return Number.POSITIVE_INFINITY;
+  if (conditionMentionsField(rule.trigger, 'state.secondsOnBattery')) {
+    return context.state.secondsOnBattery;
+  }
+
+  if (conditionMentionsField(rule.trigger, 'state.secondsInFsd')) {
+    return context.state.secondsInFsd;
+  }
+
+  if (conditionMentionsField(rule.trigger, 'state.secondsLowBattery')) {
+    return context.state.secondsLowBattery;
+  }
+
+  if (conditionMentionsField(rule.trigger, 'state.secondsOnline')) {
+    return context.state.secondsOnline;
+  }
+
+  if (conditionMentionsField(rule.trigger, 'connection.secondsSinceLastSuccessfulPoll')) {
+    return context.connection.secondsSinceLastSuccessfulPoll;
+  }
+
+  // Cannot infer how long the condition has been true from the simulator
+  // context — return 0 so hold-time is reported as not satisfied rather
+  // than falsely satisfied.
+  return 0;
+}
+
+function conditionMentionsField(
+  condition: ShutdownPolicyRule['trigger'],
+  field: string,
+): boolean {
+  if ('all' in condition) {
+    return condition.all.some((child) => conditionMentionsField(child, field));
+  }
+
+  if ('any' in condition) {
+    return condition.any.some((child) => conditionMentionsField(child, field));
+  }
+
+  if ('not' in condition) {
+    return conditionMentionsField(condition.not, field);
+  }
+
+  return condition.field === field;
 }
 
 function conditionContains(
