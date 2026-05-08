@@ -110,17 +110,9 @@ function evaluateLeafCondition(
     case 'notIncludes':
       return evaluateArrayCondition(condition, actualValue, expectedValue, false);
     case 'exists':
-      return {
-        matched: actualValue !== undefined,
-        reason: `${condition.field} ${actualValue === undefined ? 'does not exist' : 'exists'}`,
-        actualValue,
-      };
+      return makeLeafResult(condition, actualValue !== undefined, actualValue, undefined);
     case 'notExists':
-      return {
-        matched: actualValue === undefined,
-        reason: `${condition.field} ${actualValue === undefined ? 'does not exist' : 'exists'}`,
-        actualValue,
-      };
+      return makeLeafResult(condition, actualValue === undefined, actualValue, undefined);
     default:
       return {
         matched: false,

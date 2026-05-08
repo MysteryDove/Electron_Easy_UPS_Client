@@ -41,13 +41,23 @@ export class ShutdownExecutor {
     }
 
     if (this.shutdownScheduled) {
+      if (this.activeMethod === method) {
+        return {
+          method: this.activeMethod,
+          platform,
+          supported: true,
+          success: true,
+          command,
+          message: 'Shutdown command is already scheduled.',
+        };
+      }
       return {
-        method,
+        method: this.activeMethod ?? method,
         platform,
         supported: true,
-        success: true,
+        success: false,
         command,
-        message: 'Shutdown command is already scheduled.',
+        message: `A different shutdown method is already scheduled: ${this.activeMethod}.`,
       };
     }
 

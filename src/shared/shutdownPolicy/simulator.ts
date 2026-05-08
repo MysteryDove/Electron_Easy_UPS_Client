@@ -83,6 +83,7 @@ export function simulateShutdownPolicy(
     config,
     context,
     selected,
+    ruleResults,
   );
 
   if (cancellation) {
@@ -107,6 +108,7 @@ function simulateActiveCountdownCancellation(
   config: ShutdownPolicyConfig,
   context: ShutdownPolicyContext,
   selected: ShutdownPolicySimulationRuleResult | undefined,
+  ruleResults: ShutdownPolicySimulationRuleResult[],
 ): ShutdownPolicySimulationResult | null {
   const activeRuleId = context.state.activeCountdownRuleId;
   if (!activeRuleId) {
@@ -144,15 +146,11 @@ function simulateActiveCountdownCancellation(
       reason: cancelResult.reason,
     },
     selectedRule: activeRule,
-    ruleResults: config.rules.map((rule, order) => ({
-      rule,
-      order,
-      matched: rule.id === activeRule.id,
-      condition: rule.id === activeRule.id
-        ? cancelResult
-        : evaluatePolicyCondition(rule.trigger, context),
-      skippedReason: rule.id === activeRule.id ? undefined : 'not-selected',
-    })),
+    ruleResults: ruleResults.map((r) =>
+      r.rule.id === activeRule.id
+        ? { ...r, matched: true, condition: cancelResult, skippedReason: undefined }
+        : r,
+    ),
   };
 }
 
