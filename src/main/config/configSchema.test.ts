@@ -151,6 +151,7 @@ describe('shutdown policy config schema', () => {
   it('rebuilds simple FSD overlay patches into valid engine-driven rules', () => {
     const patch = parseConfigPatch({
       fsd: {
+        shutdownEnabled: true,
         overlayEnabled: false,
       },
     });
@@ -165,5 +166,23 @@ describe('shutdown policy config schema', () => {
       type: 'shutdownNow',
       method: 'sleep',
     });
+  });
+
+  it('disabled FSD rule with overlay off does not set allowImmediateShutdown', () => {
+    const patch = parseConfigPatch({
+      fsd: {
+        shutdownEnabled: false,
+        overlayEnabled: false,
+      },
+    });
+
+    const result = applyConfigPatch(defaultAppConfig, patch);
+    const fsdRule = result.shutdownPolicy.rules.find((rule) =>
+      rule.id === DEFAULT_FSD_SHUTDOWN_RULE_ID,
+    );
+
+    expect(result.shutdownPolicy.safety.allowImmediateShutdown).toBe(false);
+    expect(fsdRule?.enabled).toBe(false);
+    expect(fsdRule?.action).toEqual({ type: 'showCriticalAlert' });
   });
 });

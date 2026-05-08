@@ -127,16 +127,18 @@ export function createBatteryShutdownPolicy(
 export function createFsdShutdownPolicy(
   fsd: LegacyFsdShutdownPolicyInput,
 ): ShutdownPolicyRule {
-  const action = fsd.overlayEnabled
-    ? {
-      type: 'startShutdownCountdown' as const,
-      countdownSeconds: fsd.shutdownDelaySeconds,
-      method: fsd.shutdownMethod,
-    }
-    : {
-      type: 'shutdownNow' as const,
-      method: fsd.shutdownMethod,
-    };
+  const action = !fsd.shutdownEnabled
+    ? { type: 'showCriticalAlert' as const }
+    : fsd.overlayEnabled
+      ? {
+        type: 'startShutdownCountdown' as const,
+        countdownSeconds: fsd.shutdownDelaySeconds,
+        method: fsd.shutdownMethod,
+      }
+      : {
+        type: 'shutdownNow' as const,
+        method: fsd.shutdownMethod,
+      };
 
   return {
     id: DEFAULT_FSD_SHUTDOWN_RULE_ID,

@@ -205,6 +205,138 @@ describe('shutdown policy simulator and explanations', () => {
       expect(result.ruleResults[0].condition.reason).toContain('0s/10s');
     });
   });
+
+  describe('cancellation path preserves pre-computed ruleResults', () => {
+    it('preserves disabled skippedReason for disabled rules in cancellation result', () => {
+      const disabledRule = makeRule({
+        id: 'disabled-rule',
+        enabled: false,
+        trigger: { field: 'ups.onBattery', op: 'eq', value: true },
+        action: { type: 'showWarning' },
+      });
+      const activeRule = makeRule({
+        id: 'active-countdown',
+        priority: 100,
+        trigger: { field: 'ups.onBattery', op: 'eq', value: true },
+        action: {
+          type: 'startShutdownCountdown',
+          countdownSeconds: 60,
+          method: 'shutdown',
+        },
+        cancelWhen: { field: 'ups.online', op: 'eq', value: true },
+      });
+
+      const result = simulateShutdownPolicy(
+        makeConfig([disabledRule, activeRule]),
+        makeContext({
+          ups: { online: true, onBattery: true, lowBattery: false, fsd: false, statusTokens: ['OL', 'OB'] },
+          state: { secondsOnBattery: 120, secondsOnline: 10, secondsLowBattery: 0, secondsInFsd: 0, activeCountdownRuleId: 'active-countdown' },
+        }),
+      );
+
+      expect(result.decision).toMatchObject({ type: 'cancelShutdownCountdown' });
+      const disabledResult = result.ruleResults.find((r) => r.rule.id === 'disabled-rule');
+      expect(disabledResult?.skippedReason).toBe('disabled');
+      expect(disabledResult?.matched).toBe(false);
+      expect(disabledResult?.condition.matched).toBe(false);
+    });
+
+    it('preserves hold skippedReason for hold-blocked rules in cancellation result', () => {
+      const holdRule = makeRule({
+        id: 'hold-rule',
+        priority: 5,
+        trigger: { field: 'ups.onBattery', op: 'eq', value: true },
+        holdForSeconds: 300,
+        action: { type: 'showWarning' },
+      });
+      const activeRule = makeRule({
+        id: 'active-countdown',
+        priority: 100,
+        trigger: { field: 'ups.onBattery', op: 'eq', value: true },
+        action: {
+          type: 'startShutdownCountdown',
+          countdownSeconds: 60,
+          method: 'shutdown',
+        },
+        cancelWhen: { field: 'ups.online', op: 'eq', value: true },
+      });
+
+      const result = simulateShutdownPolicy(
+        makeConfig([holdRule, activeRule]),
+        makeContext({
+          ups: { online: true, onBattery: true, lowBattery: false, fsd: false, statusTokens: ['OL', 'OB'] },
+          state: { secondsOnBattery: 10, secondsOnline: 5, secondsLowBattery: 0, secondsInFsd: 0, activeCountdownRuleId: 'active-countdown' },
+        }),
+      );
+
+      expect(result.decision).toMatchObject({ type: 'cancelShutdownCountdown' });
+      const holdResult = result.ruleResults.find((r) => r.rule.id === 'hold-rule');
+      expect(holdResult?.skippedReason).toBe('hold');
+      expect(holdResult?.matched).toBe(false);
+      expect(holdResult?.condition.matched).toBe(false);
+    });
+
+    it('keeps matched consistent with condition.matched for non-active rules in cancellation result', () => {
+      const otherRule = makeRule({
+        id: 'other-rule',
+        priority: 5,
+        trigger: { field: 'ups.onBattery', op: 'eq', value: true },
+        action: { type: 'showWarning' },
+      });
+      const activeRule = makeRule({
+        id: 'active-countdown',
+        priority: 100,
+        trigger: { field: 'ups.online', op: 'eq', value: true },
+        action: {
+          type: 'startShutdownCountdown',
+          countdownSeconds: 60,
+          method: 'shutdown',
+        },
+        cancelWhen: { field: 'ups.online', op: 'eq', value: true },
+      });
+
+      const result = simulateShutdownPolicy(
+        makeConfig([otherRule, activeRule]),
+        makeContext({
+          ups: { online: true, onBattery: true, lowBattery: false, fsd: false, statusTokens: ['OL', 'OB'] },
+          state: { secondsOnBattery: 10, secondsOnline: 5, secondsLowBattery: 0, secondsInFsd: 0, activeCountdownRuleId: 'active-countdown' },
+        }),
+      );
+
+      expect(result.decision).toMatchObject({ type: 'cancelShutdownCountdown' });
+      for (const r of result.ruleResults) {
+        expect(r.matched).toBe(r.condition.matched);
+      }
+    });
+
+    it('marks only the active rule as matched in the cancellation result', () => {
+      const activeRule = makeRule({
+        id: 'active-countdown',
+        priority: 100,
+        trigger: { field: 'ups.onBattery', op: 'eq', value: true },
+        action: {
+          type: 'startShutdownCountdown',
+          countdownSeconds: 60,
+          method: 'shutdown',
+        },
+        cancelWhen: { field: 'ups.online', op: 'eq', value: true },
+      });
+
+      const result = simulateShutdownPolicy(
+        makeConfig([activeRule]),
+        makeContext({
+          ups: { online: true, onBattery: true, lowBattery: false, fsd: false, statusTokens: ['OL', 'OB'] },
+          state: { secondsOnBattery: 10, secondsOnline: 5, secondsLowBattery: 0, secondsInFsd: 0, activeCountdownRuleId: 'active-countdown' },
+        }),
+      );
+
+      expect(result.decision).toMatchObject({ type: 'cancelShutdownCountdown' });
+      const activeResult = result.ruleResults.find((r) => r.rule.id === 'active-countdown');
+      expect(activeResult?.matched).toBe(true);
+      expect(activeResult?.condition.matched).toBe(true);
+      expect(activeResult?.skippedReason).toBeUndefined();
+    });
+  });
 });
 
 function makeConfig(rules: ShutdownPolicyRule[]): ShutdownPolicyConfig {
