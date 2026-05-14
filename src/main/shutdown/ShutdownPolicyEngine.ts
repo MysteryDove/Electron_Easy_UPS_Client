@@ -48,9 +48,7 @@ export class ShutdownPolicyEngine {
         candidateOutranksActiveCountdown(selected, activeCountdown);
 
       if (!selectedCanOverride) {
-        // Apply cooldown bookkeeping for the rule whose countdown is being cancelled
-        // BEFORE returning. Otherwise its lastDecisionAt/cooldownUntil are never set
-        // and a still-matching trigger could immediately re-arm the countdown.
+        // Record cooldown before returning so the same trigger can't immediately re-arm.
         this.markCancelledRuleDecision(activeCountdown.ruleId, context.now);
         this.runtimeState.clearActiveCountdown();
         return cancellation;
@@ -145,9 +143,6 @@ export class ShutdownPolicyEngine {
   }
 
   private markCancelledRuleDecision(ruleId: string, now: number): void {
-    // The rule whose countdown was just cancelled deserves the same cooldown treatment
-    // as a rule whose decision was acted on: record lastDecisionAt and (if cooldownSeconds
-    // is configured) arm the cooldown window so the same trigger does not immediately re-fire.
     const rule = this.config.rules.find((candidate) => candidate.id === ruleId);
     if (!rule) {
       return;

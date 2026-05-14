@@ -1,5 +1,5 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
-import { containsFsdToken, containsLbToken, containsObToken } from './batterySafetyService';
+import { parseUpsStatusTokens } from '../shutdown/ShutdownPolicyContextBuilder';
 import type { ShutdownPolicyConfig } from '../../shared/shutdownPolicy/types';
 
 // Mock Electron's Notification (imported by batterySafetyService)
@@ -35,125 +35,125 @@ function installTestClock(): (seconds: number) => void {
   };
 }
 
-describe('containsFsdToken', () => {
+describe('parseUpsStatusTokens — FSD detection', () => {
   it('returns true for bare FSD token (uppercase)', () => {
-    expect(containsFsdToken('FSD')).toBe(true);
+    expect(parseUpsStatusTokens('FSD').includes('FSD')).toBe(true);
   });
 
   it('returns true for lowercase fsd', () => {
-    expect(containsFsdToken('fsd')).toBe(true);
+    expect(parseUpsStatusTokens('fsd').includes('FSD')).toBe(true);
   });
 
   it('returns true for mixed-case Fsd', () => {
-    expect(containsFsdToken('Fsd')).toBe(true);
+    expect(parseUpsStatusTokens('Fsd').includes('FSD')).toBe(true);
   });
 
   it('returns true when FSD is one of several tokens', () => {
-    expect(containsFsdToken('OB FSD LB')).toBe(true);
+    expect(parseUpsStatusTokens('OB FSD LB').includes('FSD')).toBe(true);
   });
 
   it('returns true for FSD with extra whitespace', () => {
-    expect(containsFsdToken('  OB   FSD  ')).toBe(true);
+    expect(parseUpsStatusTokens('  OB   FSD  ').includes('FSD')).toBe(true);
   });
 
   it('returns false for online status without FSD', () => {
-    expect(containsFsdToken('OL')).toBe(false);
+    expect(parseUpsStatusTokens('OL').includes('FSD')).toBe(false);
   });
 
   it('returns false for on-battery status without FSD', () => {
-    expect(containsFsdToken('OB LB DISCHRG')).toBe(false);
+    expect(parseUpsStatusTokens('OB LB DISCHRG').includes('FSD')).toBe(false);
   });
 
   it('returns false for empty string', () => {
-    expect(containsFsdToken('')).toBe(false);
+    expect(parseUpsStatusTokens('').includes('FSD')).toBe(false);
   });
 
   it('returns false for undefined', () => {
-    expect(containsFsdToken(undefined)).toBe(false);
+    expect(parseUpsStatusTokens(undefined).includes('FSD')).toBe(false);
   });
 
   it('returns false for null', () => {
-    expect(containsFsdToken(null)).toBe(false);
+    expect(parseUpsStatusTokens(null).includes('FSD')).toBe(false);
   });
 
   it('does not match FSD as substring of another token', () => {
-    expect(containsFsdToken('NOFSD')).toBe(false);
+    expect(parseUpsStatusTokens('NOFSD').includes('FSD')).toBe(false);
   });
 });
 
-describe('containsObToken', () => {
+describe('parseUpsStatusTokens — OB detection', () => {
   it('returns true for bare OB token', () => {
-    expect(containsObToken('OB')).toBe(true);
+    expect(parseUpsStatusTokens('OB').includes('OB')).toBe(true);
   });
 
   it('returns true when OB is one of several tokens', () => {
-    expect(containsObToken('OB DISCHRG LB')).toBe(true);
+    expect(parseUpsStatusTokens('OB DISCHRG LB').includes('OB')).toBe(true);
   });
 
   it('returns true for lowercase ob', () => {
-    expect(containsObToken('ob dischrg')).toBe(true);
+    expect(parseUpsStatusTokens('ob dischrg').includes('OB')).toBe(true);
   });
 
   it('returns false for OL status', () => {
-    expect(containsObToken('OL')).toBe(false);
+    expect(parseUpsStatusTokens('OL').includes('OB')).toBe(false);
   });
 
   it('returns false for OL CHRG', () => {
-    expect(containsObToken('OL CHRG')).toBe(false);
+    expect(parseUpsStatusTokens('OL CHRG').includes('OB')).toBe(false);
   });
 
   it('returns false for empty string', () => {
-    expect(containsObToken('')).toBe(false);
+    expect(parseUpsStatusTokens('').includes('OB')).toBe(false);
   });
 
   it('returns false for undefined', () => {
-    expect(containsObToken(undefined)).toBe(false);
+    expect(parseUpsStatusTokens(undefined).includes('OB')).toBe(false);
   });
 
   it('returns false for null', () => {
-    expect(containsObToken(null)).toBe(false);
+    expect(parseUpsStatusTokens(null).includes('OB')).toBe(false);
   });
 
   it('does not match OB as substring of another token', () => {
-    expect(containsObToken('KNOB')).toBe(false);
+    expect(parseUpsStatusTokens('KNOB').includes('OB')).toBe(false);
   });
 });
 
-describe('containsLbToken', () => {
+describe('parseUpsStatusTokens — LB detection', () => {
   it('returns true for bare LB token', () => {
-    expect(containsLbToken('LB')).toBe(true);
+    expect(parseUpsStatusTokens('LB').includes('LB')).toBe(true);
   });
 
   it('returns true when LB is one of several tokens', () => {
-    expect(containsLbToken('OB DISCHRG LB')).toBe(true);
+    expect(parseUpsStatusTokens('OB DISCHRG LB').includes('LB')).toBe(true);
   });
 
   it('returns true for lowercase lb', () => {
-    expect(containsLbToken('ob lb dischrg')).toBe(true);
+    expect(parseUpsStatusTokens('ob lb dischrg').includes('LB')).toBe(true);
   });
 
   it('returns false for OL status', () => {
-    expect(containsLbToken('OL')).toBe(false);
+    expect(parseUpsStatusTokens('OL').includes('LB')).toBe(false);
   });
 
   it('returns false for OB without LB', () => {
-    expect(containsLbToken('OB DISCHRG')).toBe(false);
+    expect(parseUpsStatusTokens('OB DISCHRG').includes('LB')).toBe(false);
   });
 
   it('returns false for empty string', () => {
-    expect(containsLbToken('')).toBe(false);
+    expect(parseUpsStatusTokens('').includes('LB')).toBe(false);
   });
 
   it('returns false for undefined', () => {
-    expect(containsLbToken(undefined)).toBe(false);
+    expect(parseUpsStatusTokens(undefined).includes('LB')).toBe(false);
   });
 
   it('returns false for null', () => {
-    expect(containsLbToken(null)).toBe(false);
+    expect(parseUpsStatusTokens(null).includes('LB')).toBe(false);
   });
 
   it('does not match LB as substring of another token', () => {
-    expect(containsLbToken('BULB')).toBe(false);
+    expect(parseUpsStatusTokens('BULB').includes('LB')).toBe(false);
   });
 });
 
