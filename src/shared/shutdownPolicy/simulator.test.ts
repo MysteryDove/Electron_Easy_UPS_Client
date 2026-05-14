@@ -1,4 +1,5 @@
 import { describe, expect, it } from 'vitest';
+import { ShutdownPolicyEngine } from '../../main/shutdown/ShutdownPolicyEngine';
 import { explainDecision, flattenConditionExplanation } from './explain';
 import { simulateShutdownPolicy } from './simulator';
 import type {
@@ -8,6 +9,51 @@ import type {
 } from './types';
 
 describe('shutdown policy simulator and explanations', () => {
+  it('returns no decision for an empty policy', () => {
+    const result = simulateShutdownPolicy(makeConfig([]), makeContext());
+
+    expect(result.decision).toEqual({ type: 'none' });
+    expect(result.selectedRule).toBeUndefined();
+    expect(result.ruleResults).toEqual([]);
+  });
+
+  it('matches the engine rule selection when equal-priority rules differ only by severity', () => {
+    const warningRule = makeRule({
+      id: 'warning',
+      name: 'Battery warning',
+      priority: 100,
+      severity: 'warning',
+      trigger: { field: 'ups.onBattery', op: 'eq', value: true },
+      action: { type: 'showWarning' },
+    });
+    const criticalRule = makeRule({
+      id: 'critical',
+      name: 'Battery critical',
+      priority: 100,
+      severity: 'critical',
+      trigger: { field: 'ups.onBattery', op: 'eq', value: true },
+      action: {
+        type: 'startShutdownCountdown',
+        countdownSeconds: 45,
+        method: 'shutdown',
+      },
+    });
+    const config = makeConfig([warningRule, criticalRule]);
+    const context = makeContext();
+
+    const simulatorResult = simulateShutdownPolicy(config, context);
+    const engineResult = new ShutdownPolicyEngine(config).evaluate(context);
+
+    expect(simulatorResult.selectedRule?.id).toBe('critical');
+    expect(engineResult).toMatchObject({
+      type: 'startShutdownCountdown',
+      ruleId: 'critical',
+    });
+    expect(
+      engineResult.type === 'none' ? undefined : engineResult.ruleId,
+    ).toBe(simulatorResult.selectedRule?.id);
+  });
+
   it('selects the highest ranked matching rule and explains the decision', () => {
     const shutdownRule = makeRule({
       id: 'shutdown',
@@ -71,6 +117,52 @@ describe('shutdown policy simulator and explanations', () => {
         expect.stringContaining('battery.chargePercent lte did not match'),
       ]),
     );
+  });
+
+  it('creates showCriticalAlert, shutdownNow, and explicit cancel decisions from matching rules', () => {
+    const alertResult = simulateShutdownPolicy(
+      makeConfig([
+        makeRule({
+          id: 'critical-alert',
+          action: { type: 'showCriticalAlert', message: 'critical' },
+        }),
+      ]),
+      makeContext(),
+    );
+    const shutdownNowResult = simulateShutdownPolicy(
+      makeConfig([
+        makeRule({
+          id: 'shutdown-now',
+          action: { type: 'shutdownNow', method: 'sleep' },
+        }),
+      ]),
+      makeContext(),
+    );
+    const cancelResult = simulateShutdownPolicy(
+      makeConfig([
+        makeRule({
+          id: 'cancel-now',
+          action: { type: 'cancelShutdownCountdown' },
+        }),
+      ]),
+      makeContext(),
+    );
+
+    expect(alertResult.decision).toEqual({
+      type: 'showCriticalAlert',
+      ruleId: 'critical-alert',
+      message: 'critical',
+    });
+    expect(shutdownNowResult.decision).toEqual({
+      type: 'shutdownNow',
+      ruleId: 'shutdown-now',
+      method: 'sleep',
+    });
+    expect(cancelResult.decision).toEqual({
+      type: 'cancelShutdownCountdown',
+      ruleId: 'cancel-now',
+      reason: 'Rule action requested countdown cancellation',
+    });
   });
 
   it('lets an equal-rank earlier shutdown rule override active countdown cancellation', () => {
@@ -203,6 +295,130 @@ describe('shutdown policy simulator and explanations', () => {
       expect(result.ruleResults[0].matched).toBe(false);
       expect(result.ruleResults[0].skippedReason).toBe('hold');
       expect(result.ruleResults[0].condition.reason).toContain('0s/10s');
+    });
+
+    it.each([
+      {
+        name: 'low-battery status duration',
+        trigger: { field: 'ups.lowBattery', op: 'eq', value: true },
+        state: {
+          secondsOnBattery: 120,
+          secondsOnline: 0,
+          secondsLowBattery: 40,
+          secondsInFsd: 0,
+        },
+        ups: {
+          online: false,
+          onBattery: true,
+          lowBattery: true,
+          fsd: false,
+          statusTokens: ['OB', 'LB'],
+        },
+      },
+      {
+        name: 'fsd status duration',
+        trigger: { field: 'ups.fsd', op: 'eq', value: true },
+        state: {
+          secondsOnBattery: 120,
+          secondsOnline: 0,
+          secondsLowBattery: 0,
+          secondsInFsd: 45,
+        },
+        ups: {
+          online: false,
+          onBattery: true,
+          lowBattery: false,
+          fsd: true,
+          statusTokens: ['OB', 'FSD'],
+        },
+      },
+      {
+        name: 'online status duration',
+        trigger: { field: 'ups.online', op: 'eq', value: true },
+        state: {
+          secondsOnBattery: 0,
+          secondsOnline: 35,
+          secondsLowBattery: 0,
+          secondsInFsd: 0,
+        },
+        ups: {
+          online: true,
+          onBattery: false,
+          lowBattery: false,
+          fsd: false,
+          statusTokens: ['OL'],
+        },
+      },
+      {
+        name: 'state.secondsLowBattery numeric field duration',
+        trigger: { field: 'state.secondsLowBattery', op: 'gte', value: 10 },
+        state: {
+          secondsOnBattery: 120,
+          secondsOnline: 0,
+          secondsLowBattery: 25,
+          secondsInFsd: 0,
+        },
+        ups: {
+          online: false,
+          onBattery: true,
+          lowBattery: true,
+          fsd: false,
+          statusTokens: ['OB', 'LB'],
+        },
+      },
+      {
+        name: 'state.secondsInFsd numeric field duration',
+        trigger: { field: 'state.secondsInFsd', op: 'gte', value: 10 },
+        state: {
+          secondsOnBattery: 120,
+          secondsOnline: 0,
+          secondsLowBattery: 0,
+          secondsInFsd: 25,
+        },
+        ups: {
+          online: false,
+          onBattery: true,
+          lowBattery: false,
+          fsd: true,
+          statusTokens: ['OB', 'FSD'],
+        },
+      },
+      {
+        name: 'state.secondsOnline numeric field duration',
+        trigger: { field: 'state.secondsOnline', op: 'gte', value: 10 },
+        state: {
+          secondsOnBattery: 0,
+          secondsOnline: 25,
+          secondsLowBattery: 0,
+          secondsInFsd: 0,
+        },
+        ups: {
+          online: true,
+          onBattery: false,
+          lowBattery: false,
+          fsd: false,
+          statusTokens: ['OL'],
+        },
+      },
+    ] satisfies Array<{
+      name: string;
+      trigger: ShutdownPolicyRule['trigger'];
+      state: ShutdownPolicyContext['state'];
+      ups: ShutdownPolicyContext['ups'];
+    }>)('uses $name to satisfy hold-time inference', ({ trigger, state, ups }) => {
+      const result = simulateShutdownPolicy(
+        makeConfig([
+          makeRule({
+            trigger,
+            holdForSeconds: 20,
+            action: { type: 'showWarning' },
+          }),
+        ]),
+        makeContext({ state, ups }),
+      );
+
+      expect(result.ruleResults[0].matched).toBe(true);
+      expect(result.ruleResults[0].skippedReason).toBeUndefined();
     });
   });
 

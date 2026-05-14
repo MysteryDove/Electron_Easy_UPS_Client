@@ -4,6 +4,7 @@ import type {
   ShutdownPolicyConfig,
   ShutdownPolicyRule,
 } from './types';
+import { DEFAULT_SHUTDOWN_POLICY_SAFETY } from './constants';
 
 export const DEFAULT_BATTERY_WARNING_RULE_ID = 'default-battery-warning';
 export const DEFAULT_BATTERY_SHUTDOWN_RULE_ID = 'default-battery-shutdown';
@@ -71,7 +72,7 @@ export function createBatteryWarningPolicy(
         lowBatteryPercentOrTokenCondition(battery.warningPct),
       ],
     },
-    holdForSeconds: 0,
+    holdForSeconds: 5,
     action: {
       type: 'showWarning',
     },
@@ -102,7 +103,7 @@ export function createBatteryShutdownPolicy(
         lowBatteryPercentOrTokenCondition(battery.shutdownPct),
       ],
     },
-    holdForSeconds: 0,
+    holdForSeconds: 10,
     action,
     cancelWhen: {
       any: [
@@ -151,7 +152,7 @@ export function createFsdShutdownPolicy(
       op: 'eq',
       value: true,
     },
-    holdForSeconds: 0,
+    holdForSeconds: 3,
     action,
     cancelWhen: null,
     cooldownSeconds: 0,
@@ -210,7 +211,7 @@ export function createCommunicationLossPolicy(
         },
       ],
     },
-    holdForSeconds: 0,
+    holdForSeconds: DEFAULT_SHUTDOWN_POLICY_SAFETY.requireHoldForShutdownSeconds,
     action: {
       type: 'startShutdownCountdown',
       countdownSeconds,
@@ -249,7 +250,7 @@ export function createRuntimeRemainingPolicy(
         },
       ],
     },
-    holdForSeconds: 0,
+    holdForSeconds: 10,
     action: {
       type: 'startShutdownCountdown',
       countdownSeconds,
@@ -276,7 +277,8 @@ export function createSimpleShutdownPolicyConfig(
     version: 1,
     mode: input.mode ?? existing?.mode ?? 'simple',
     safety: {
-      requireHoldForShutdownSeconds: 0,
+      requireHoldForShutdownSeconds:
+        DEFAULT_SHUTDOWN_POLICY_SAFETY.requireHoldForShutdownSeconds,
       maxCountdownSeconds: existing?.safety.maxCountdownSeconds ?? 300,
       allowImmediateShutdown:
         existing?.safety.allowImmediateShutdown === true ||

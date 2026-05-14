@@ -2,8 +2,11 @@ import type {
   ConditionEvaluationResult,
   ShutdownPolicyDecision,
   ShutdownPolicyRule,
-  ShutdownPolicySeverity,
 } from '../../shared/shutdownPolicy/types';
+import {
+  compareShutdownPolicyRank,
+  compareShutdownPolicyRuleResults,
+} from '../../shared/shutdownPolicy/ordering';
 import type { ActiveShutdownCountdown } from './ShutdownPolicyRuntimeState';
 
 export type ShutdownPolicyDecisionCandidate = {
@@ -11,13 +14,6 @@ export type ShutdownPolicyDecisionCandidate = {
   order: number;
   decision: ShutdownPolicyDecision;
   triggerResult: ConditionEvaluationResult;
-};
-
-const severityRank: Record<ShutdownPolicySeverity, number> = {
-  info: 0,
-  warning: 1,
-  critical: 2,
-  forced: 3,
 };
 
 export function resolveShutdownPolicyDecision(
@@ -38,36 +34,23 @@ export function compareShutdownPolicyDecisionRank(
   left: ShutdownPolicyDecisionCandidate,
   right: ShutdownPolicyDecisionCandidate,
 ): number {
-  if (left.rule.priority !== right.rule.priority) {
-    return left.rule.priority - right.rule.priority;
-  }
-
-  const leftSeverity = severityRank[left.rule.severity];
-  const rightSeverity = severityRank[right.rule.severity];
-  if (leftSeverity !== rightSeverity) {
-    return leftSeverity - rightSeverity;
-  }
-
-  if (left.order !== right.order) {
-    return right.order - left.order;
-  }
-
-  return 0;
+  return compareShutdownPolicyRuleResults(left, right);
 }
 
 export function candidateOutranksActiveCountdown(
   candidate: ShutdownPolicyDecisionCandidate,
   activeCountdown: ActiveShutdownCountdown,
 ): boolean {
-  if (candidate.rule.priority !== activeCountdown.priority) {
-    return candidate.rule.priority > activeCountdown.priority;
-  }
-
-  const candidateSeverity = severityRank[candidate.rule.severity];
-  const activeSeverity = severityRank[activeCountdown.severity];
-  if (candidateSeverity !== activeSeverity) {
-    return candidateSeverity > activeSeverity;
-  }
-
-  return candidate.order < activeCountdown.order;
+  return compareShutdownPolicyRank(
+    {
+      priority: candidate.rule.priority,
+      severity: candidate.rule.severity,
+      order: candidate.order,
+    },
+    {
+      priority: activeCountdown.priority,
+      severity: activeCountdown.severity,
+      order: activeCountdown.order,
+    },
+  ) > 0;
 }

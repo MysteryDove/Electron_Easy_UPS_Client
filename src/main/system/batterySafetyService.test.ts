@@ -1,4 +1,4 @@
-import { describe, expect, it, vi, beforeEach } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { containsFsdToken, containsLbToken, containsObToken } from './batterySafetyService';
 import type { ShutdownPolicyConfig } from '../../shared/shutdownPolicy/types';
 
@@ -21,6 +21,19 @@ vi.mock('node:child_process', () => ({
 vi.mock('./i18nService', () => ({
   t: (key: string) => key,
 }));
+
+const DEFAULT_TEST_TIME_MS = Date.parse('2026-05-14T00:00:00.000Z');
+
+function installTestClock(): (seconds: number) => void {
+  let nowMs = DEFAULT_TEST_TIME_MS;
+  vi.useFakeTimers();
+  vi.setSystemTime(nowMs);
+
+  return (seconds: number) => {
+    nowMs += seconds * 1000;
+    vi.setSystemTime(nowMs);
+  };
+}
 
 describe('containsFsdToken', () => {
   it('returns true for bare FSD token (uppercase)', () => {
@@ -221,22 +234,34 @@ describe('BatterySafetyService — FSD shutdown is irrevocable', () => {
 
   let service: InstanceType<typeof import('./batterySafetyService').BatterySafetyService>;
   let mockAlert: ReturnType<typeof makeMockCriticalAlert>;
+  let advanceClock: (seconds: number) => void;
 
   beforeEach(async () => {
+    advanceClock = installTestClock();
     const { BatterySafetyService } = await import('./batterySafetyService');
     mockAlert = makeMockCriticalAlert();
     service = new BatterySafetyService(makeConfig() as never, mockAlert as never);
   });
 
+  afterEach(() => {
+    vi.useRealTimers();
+  });
+
+  function triggerDefaultFsd(status = 'OL FSD', telemetry: Record<string, unknown> = { battery_charge_pct: 80 }) {
+    service.handleTelemetry(telemetry as never, status);
+    advanceClock(3);
+    service.handleTelemetry(telemetry as never, status);
+  }
+
   it('shows FSD overlay on first FSD detection', () => {
-    service.handleTelemetry({ battery_charge_pct: 80 } as never, 'OL FSD');
+    triggerDefaultFsd();
 
     expect(mockAlert.show).toHaveBeenCalledTimes(1);
     expect(mockAlert.show.mock.calls[0][0].type).toBe('critical');
   });
 
   it('shows FSD overlay even when battery percent is missing', () => {
-    service.handleTelemetry({} as never, 'OL FSD');
+    triggerDefaultFsd('OL FSD', {});
 
     expect(mockAlert.show).toHaveBeenCalledTimes(1);
     expect(mockAlert.show.mock.calls[0][0].type).toBe('critical');
@@ -245,7 +270,7 @@ describe('BatterySafetyService — FSD shutdown is irrevocable', () => {
 
   it('does NOT dismiss the FSD overlay when subsequent telemetry lacks FSD', () => {
     // FSD detected
-    service.handleTelemetry({ battery_charge_pct: 80 } as never, 'OL FSD');
+    triggerDefaultFsd();
     expect(mockAlert.show).toHaveBeenCalledTimes(1);
 
     mockAlert.dismiss.mockClear();
@@ -257,7 +282,7 @@ describe('BatterySafetyService — FSD shutdown is irrevocable', () => {
 
   it('does NOT dismiss FSD overlay when battery recovers above warning threshold', () => {
     // FSD detected at 30%
-    service.handleTelemetry({ battery_charge_pct: 30 } as never, 'OB FSD LB');
+    triggerDefaultFsd('OB FSD LB', { battery_charge_pct: 30 });
     expect(mockAlert.show).toHaveBeenCalledTimes(1);
 
     mockAlert.dismiss.mockClear();
@@ -268,8 +293,10 @@ describe('BatterySafetyService — FSD shutdown is irrevocable', () => {
   });
 
   it('does NOT show FSD overlay twice for repeated FSD telemetry', () => {
-    service.handleTelemetry({ battery_charge_pct: 80 } as never, 'OL FSD');
+    triggerDefaultFsd('OL FSD');
+    advanceClock(1);
     service.handleTelemetry({ battery_charge_pct: 80 } as never, 'OB FSD LB');
+    advanceClock(1);
     service.handleTelemetry({ battery_charge_pct: 80 } as never, 'FSD');
 
     // Only the first FSD detection triggers the overlay
@@ -309,7 +336,7 @@ describe('BatterySafetyService — FSD shutdown is irrevocable', () => {
 
   it('user dismiss resets FSD state, allowing re-trigger on next FSD', () => {
     // FSD detected — overlay shown
-    service.handleTelemetry({ battery_charge_pct: 80 } as never, 'OL FSD');
+    triggerDefaultFsd();
     expect(mockAlert.show).toHaveBeenCalledTimes(1);
 
     // Capture the onDismissed callback (3rd argument to show())
@@ -329,7 +356,7 @@ describe('BatterySafetyService — FSD shutdown is irrevocable', () => {
 
     // A subsequent FSD signal should trigger a new overlay
     mockAlert.show.mockClear();
-    service.handleTelemetry({ battery_charge_pct: 80 } as never, 'OB FSD');
+    triggerDefaultFsd('OB FSD');
     expect(mockAlert.show).toHaveBeenCalledTimes(1);
   });
 });
@@ -379,12 +406,32 @@ describe('BatterySafetyService — OB/OL gating', () => {
 
   let service: InstanceType<typeof import('./batterySafetyService').BatterySafetyService>;
   let mockAlert: ReturnType<typeof makeMockCriticalAlert>;
+  let advanceClock: (seconds: number) => void;
 
   beforeEach(async () => {
+    advanceClock = installTestClock();
     const { BatterySafetyService } = await import('./batterySafetyService');
     mockAlert = makeMockCriticalAlert();
     service = new BatterySafetyService(makeConfig() as never, mockAlert as never);
   });
+
+  afterEach(() => {
+    vi.useRealTimers();
+  });
+
+  function triggerDefaultWarning(charge = 30, status = 'OB DISCHRG') {
+    service.handleTelemetry({ battery_charge_pct: 80 } as never, 'OB');
+    service.handleTelemetry({ battery_charge_pct: charge } as never, status);
+    advanceClock(5);
+    service.handleTelemetry({ battery_charge_pct: charge } as never, status);
+  }
+
+  function triggerDefaultShutdown(charge = 15, status = 'OB DISCHRG LB') {
+    service.handleTelemetry({ battery_charge_pct: 80 } as never, 'OB');
+    service.handleTelemetry({ battery_charge_pct: charge } as never, status);
+    advanceClock(10);
+    service.handleTelemetry({ battery_charge_pct: charge } as never, status);
+  }
 
   it('does NOT trigger warning when battery is low but UPS is online (OL)', () => {
     service.handleTelemetry({ battery_charge_pct: 80 } as never, 'OL');
@@ -401,16 +448,14 @@ describe('BatterySafetyService — OB/OL gating', () => {
   });
 
   it('triggers warning when battery is low and UPS is on battery (OB)', () => {
-    service.handleTelemetry({ battery_charge_pct: 80 } as never, 'OB');
-    service.handleTelemetry({ battery_charge_pct: 30 } as never, 'OB DISCHRG');
+    triggerDefaultWarning();
 
     expect(mockAlert.show).toHaveBeenCalledTimes(1);
     expect(mockAlert.show.mock.calls[0][0].type).toBe('warning');
   });
 
   it('triggers shutdown alert when battery crosses below shutdownPct on OB', () => {
-    service.handleTelemetry({ battery_charge_pct: 80 } as never, 'OB');
-    service.handleTelemetry({ battery_charge_pct: 15 } as never, 'OB DISCHRG LB');
+    triggerDefaultShutdown();
 
     // The engine emits the highest-priority matching rule only.
     expect(mockAlert.show).toHaveBeenCalledTimes(1);
@@ -420,8 +465,7 @@ describe('BatterySafetyService — OB/OL gating', () => {
 
   it('cancels shutdown countdown when UPS transitions from OB to OL', () => {
     // On battery, battery drops below shutdown threshold
-    service.handleTelemetry({ battery_charge_pct: 80 } as never, 'OB');
-    service.handleTelemetry({ battery_charge_pct: 15 } as never, 'OB DISCHRG LB');
+    triggerDefaultShutdown();
     expect(mockAlert.show).toHaveBeenCalledTimes(1);
 
     mockAlert.dismiss.mockClear();
@@ -434,8 +478,7 @@ describe('BatterySafetyService — OB/OL gating', () => {
   });
 
   it('still cancels shutdown countdown when an intermediate poll omits ups.status', () => {
-    service.handleTelemetry({ battery_charge_pct: 80 } as never, 'OB');
-    service.handleTelemetry({ battery_charge_pct: 15 } as never, 'OB DISCHRG LB');
+    triggerDefaultShutdown();
     expect(mockAlert.show).toHaveBeenCalledTimes(1);
 
     mockAlert.dismiss.mockClear();
@@ -451,8 +494,7 @@ describe('BatterySafetyService — OB/OL gating', () => {
 
   it('re-arms policy alerts on OB→OL so warnings re-trigger if power fails again', () => {
     // On battery → warning triggered
-    service.handleTelemetry({ battery_charge_pct: 80 } as never, 'OB');
-    service.handleTelemetry({ battery_charge_pct: 30 } as never, 'OB DISCHRG');
+    triggerDefaultWarning();
     expect(mockAlert.show).toHaveBeenCalledTimes(1);
 
     // Power returns
@@ -460,6 +502,8 @@ describe('BatterySafetyService — OB/OL gating', () => {
     mockAlert.show.mockClear();
 
     // Power fails again — warning should re-trigger at the still-low level
+    service.handleTelemetry({ battery_charge_pct: 30 } as never, 'OB DISCHRG');
+    advanceClock(5);
     service.handleTelemetry({ battery_charge_pct: 30 } as never, 'OB DISCHRG');
     expect(mockAlert.show).toHaveBeenCalledTimes(1);
   });
@@ -478,6 +522,8 @@ describe('BatterySafetyService — OB/OL gating', () => {
     } as never, alert as never);
 
     // FSD detected on battery
+    svc.handleTelemetry({ battery_charge_pct: 80 } as never, 'OB FSD');
+    advanceClock(3);
     svc.handleTelemetry({ battery_charge_pct: 80 } as never, 'OB FSD');
     expect(alert.show).toHaveBeenCalledTimes(1);
 
@@ -747,6 +793,52 @@ describe('BatterySafetyService — policy-driven action application', () => {
     expect(executionEntry?.execution?.method).toBe('shutdown');
     expect(executionEntry?.execution?.supported).toBe(process.platform === 'win32');
   });
+
+  it('releases a failed shutdown command so the same rule can re-fire on the next telemetry tick', async () => {
+    const { BatterySafetyService } = await import('./batterySafetyService');
+    const alert = makeMockCriticalAlert();
+    const svc = new BatterySafetyService(
+      makeConfig(makePolicy({
+        action: {
+          type: 'startShutdownCountdown',
+          countdownSeconds: 30,
+          method: 'shutdown',
+        },
+        cancelWhen: null,
+      })) as never,
+      alert as never,
+    );
+    const execute = vi.fn().mockRejectedValue(new Error('fake failure'));
+    (svc as unknown as {
+      shutdownExecutor: { execute: typeof execute };
+    }).shutdownExecutor.execute = execute;
+
+    svc.handleTelemetry({ battery_charge_pct: 80 } as never, 'OB');
+    const onCountdownElapsed = alert.show.mock.calls[0][1] as (() => void) | undefined;
+
+    expect(onCountdownElapsed).toBeTypeOf('function');
+
+    onCountdownElapsed?.();
+    await flushAsyncShutdownWork();
+
+    const internals = svc as unknown as {
+      activeCountdownRuleId: string | null;
+      appliedRuleIds: Set<string>;
+    };
+    expect(internals.activeCountdownRuleId).toBeNull();
+    expect(internals.appliedRuleIds.has('advanced-rule')).toBe(false);
+    expect(svc.getDecisionLog().some((entry) =>
+      entry.event === 'failure' &&
+      entry.ruleId === 'advanced-rule' &&
+      entry.execution?.errorMessage === 'fake failure',
+    )).toBe(true);
+
+    alert.show.mockClear();
+
+    svc.handleTelemetry({ battery_charge_pct: 80 } as never, 'OB');
+
+    expect(alert.show).toHaveBeenCalledTimes(1);
+  });
 });
 
 describe('BatterySafetyService — LB fallback without battery.charge', () => {
@@ -792,15 +884,27 @@ describe('BatterySafetyService — LB fallback without battery.charge', () => {
 
   let service: InstanceType<typeof import('./batterySafetyService').BatterySafetyService>;
   let mockAlert: ReturnType<typeof makeMockCriticalAlert>;
+  let advanceClock: (seconds: number) => void;
 
   beforeEach(async () => {
+    advanceClock = installTestClock();
     const { BatterySafetyService } = await import('./batterySafetyService');
     mockAlert = makeMockCriticalAlert();
     service = new BatterySafetyService(makeConfig() as never, mockAlert as never);
   });
 
+  afterEach(() => {
+    vi.useRealTimers();
+  });
+
+  function triggerDefaultLbShutdown(status = 'OB LB DISCHRG') {
+    service.handleTelemetry({} as never, status);
+    advanceClock(10);
+    service.handleTelemetry({} as never, status);
+  }
+
   it('triggers shutdown when OB LB is reported without battery.charge', () => {
-    service.handleTelemetry({} as never, 'OB LB DISCHRG');
+    triggerDefaultLbShutdown();
 
     expect(mockAlert.show).toHaveBeenCalledTimes(1);
     expect(mockAlert.show.mock.calls[0][0].type).toBe('critical');
@@ -820,7 +924,7 @@ describe('BatterySafetyService — LB fallback without battery.charge', () => {
   });
 
   it('cancels LB-triggered shutdown when UPS transitions to OL', () => {
-    service.handleTelemetry({} as never, 'OB LB DISCHRG');
+    triggerDefaultLbShutdown();
     expect(mockAlert.show).toHaveBeenCalledTimes(1);
 
     mockAlert.dismiss.mockClear();
@@ -832,7 +936,7 @@ describe('BatterySafetyService — LB fallback without battery.charge', () => {
 
   it('re-triggers LB warning after OB→OL→OB cycle without battery.charge', () => {
     // First OB LB triggers shutdown
-    service.handleTelemetry({} as never, 'OB LB');
+    triggerDefaultLbShutdown('OB LB');
     expect(mockAlert.show).toHaveBeenCalledTimes(1);
 
     // Power returns
@@ -841,11 +945,13 @@ describe('BatterySafetyService — LB fallback without battery.charge', () => {
 
     // Power fails again with LB
     service.handleTelemetry({} as never, 'OB LB');
+    advanceClock(10);
+    service.handleTelemetry({} as never, 'OB LB');
     expect(mockAlert.show).toHaveBeenCalledTimes(1);
   });
 
   it('uses shutdownPct as the synthesized battery percent in the alert', () => {
-    service.handleTelemetry({} as never, 'OB LB DISCHRG');
+    triggerDefaultLbShutdown();
 
     // The critical alert should show shutdownPct as the battery percent
     const criticalCall = mockAlert.show.mock.calls[0][0];
@@ -853,7 +959,7 @@ describe('BatterySafetyService — LB fallback without battery.charge', () => {
   });
 
   it('records applied policy decisions with condition explanations', () => {
-    service.handleTelemetry({} as never, 'OB LB DISCHRG');
+    triggerDefaultLbShutdown();
 
     const log = service.getDecisionLog();
     expect(log.length).toBeGreaterThanOrEqual(1);
@@ -912,6 +1018,16 @@ describe('BatterySafetyService — Phase 0 safety hotfixes', () => {
       isShowing: false,
     };
   }
+
+  let advanceClock: (seconds: number) => void;
+
+  beforeEach(() => {
+    advanceClock = installTestClock();
+  });
+
+  afterEach(() => {
+    vi.useRealTimers();
+  });
 
   // Advanced policy: default FSD rule PLUS a user-authored cancel rule whose
   // trigger is plain ups.online==true. Pre-fix this rule defeated FSD.
@@ -999,6 +1115,8 @@ describe('BatterySafetyService — Phase 0 safety hotfixes', () => {
 
     // Start FSD — fsdShutdownCommitted=true and activeCountdownRuleId set.
     service.handleTelemetry({ battery_charge_pct: 80 } as never, 'OL FSD');
+    advanceClock(3);
+    service.handleTelemetry({ battery_charge_pct: 80 } as never, 'OL FSD');
     expect(alert.show).toHaveBeenCalledTimes(1);
     alert.dismiss.mockClear();
 
@@ -1017,6 +1135,194 @@ describe('BatterySafetyService — Phase 0 safety hotfixes', () => {
     // cancellation again.
     service.handleTelemetry({ battery_charge_pct: 80 } as never, 'OL');
     expect(alert.dismiss).not.toHaveBeenCalled();
+  });
+});
+
+describe('BatterySafetyService — communication-loss timer and failure handling', () => {
+  function makeConfig(shutdownPolicy: ShutdownPolicyConfig) {
+    return {
+      battery: {
+        warningPct: 40,
+        shutdownPct: 20,
+        warningToastEnabled: false,
+        shutdownEnabled: false,
+        criticalAlertEnabled: false,
+        criticalShutdownAlertEnabled: false,
+        shutdownCountdownSeconds: 45,
+        shutdownMethod: 'sleep' as const,
+      },
+      fsd: {
+        shutdownEnabled: false,
+        shutdownDelaySeconds: 10,
+        shutdownMethod: 'shutdown' as const,
+        overlayEnabled: true,
+      },
+      shutdownPolicy,
+      nut: {} as never,
+      polling: {} as never,
+      data: {} as never,
+      debug: { level: 'off' } as never,
+      startup: {} as never,
+      theme: {} as never,
+      i18n: {} as never,
+      dashboard: {} as never,
+      wizard: {} as never,
+      line: {} as never,
+    };
+  }
+
+  function makeMockCriticalAlert() {
+    return {
+      show: vi.fn(),
+      dismiss: vi.fn(),
+      isShowing: false,
+    };
+  }
+
+  it('evaluates communication-loss rules on reconnecting timer ticks and clears the timer on stop', async () => {
+    vi.useFakeTimers();
+    vi.setSystemTime(new Date('2026-05-14T00:00:00.000Z'));
+
+    try {
+      const { BatterySafetyService } = await import('./batterySafetyService');
+      const alert = makeMockCriticalAlert();
+      const service = new BatterySafetyService(
+        makeConfig({
+          version: 1,
+          mode: 'advanced',
+          safety: {
+            requireHoldForShutdownSeconds: 0,
+            maxCountdownSeconds: 300,
+            allowImmediateShutdown: false,
+            allowFsdAutoCancel: false,
+          },
+          rules: [
+            {
+              id: 'comms-loss-warning',
+              name: 'Comms loss warning',
+              enabled: true,
+              priority: 100,
+              severity: 'critical',
+              trigger: {
+                all: [
+                  { field: 'state.secondsOnBattery', op: 'gte', value: 0 },
+                  {
+                    field: 'connection.secondsSinceLastSuccessfulPoll',
+                    op: 'gte',
+                    value: 5,
+                  },
+                ],
+              },
+              action: { type: 'showCriticalAlert' },
+              createdBy: 'user',
+            },
+          ],
+        }) as never,
+        alert as never,
+      );
+
+      service.handleTelemetry({ battery_charge_pct: 80 } as never, 'OB');
+      alert.show.mockClear();
+
+      service.handleConnectionState('reconnecting');
+      expect(
+        (service as unknown as {
+          communicationLossEvaluationTimer: ReturnType<typeof setInterval> | null;
+        }).communicationLossEvaluationTimer,
+      ).not.toBeNull();
+
+      vi.advanceTimersByTime(5000);
+
+      expect(alert.show).toHaveBeenCalledTimes(1);
+      expect(alert.show.mock.calls[0][0].type).toBe('critical');
+
+      service.stop();
+      expect(
+        (service as unknown as {
+          communicationLossEvaluationTimer: ReturnType<typeof setInterval> | null;
+        }).communicationLossEvaluationTimer,
+      ).toBeNull();
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  it('shows a failure alert when cancelling a pending shutdown command fails', async () => {
+    const warnSpy = vi.spyOn(console, 'warn').mockImplementation(() => {});
+
+    try {
+      const { BatterySafetyService } = await import('./batterySafetyService');
+      const alert = makeMockCriticalAlert();
+      const service = new BatterySafetyService(
+        makeConfig({
+          version: 1,
+          mode: 'advanced',
+          safety: {
+            requireHoldForShutdownSeconds: 0,
+            maxCountdownSeconds: 300,
+            allowImmediateShutdown: false,
+            allowFsdAutoCancel: false,
+          },
+          rules: [
+            {
+              id: 'countdown-rule',
+              name: 'Countdown rule',
+              enabled: true,
+              priority: 100,
+              severity: 'critical',
+              trigger: { field: 'ups.onBattery', op: 'eq', value: true },
+              action: {
+                type: 'startShutdownCountdown',
+                countdownSeconds: 30,
+                method: 'shutdown',
+              },
+              cancelWhen: { field: 'ups.online', op: 'eq', value: true },
+              createdBy: 'user',
+            },
+          ],
+        }) as never,
+        alert as never,
+      );
+
+      (
+        service as unknown as {
+          shutdownExecutor: {
+            cancelPending: ReturnType<typeof vi.fn>;
+          };
+        }
+      ).shutdownExecutor.cancelPending = vi.fn().mockResolvedValue({
+        method: 'shutdown',
+        platform: process.platform,
+        supported: true,
+        success: false,
+        command: 'shutdown.exe /a',
+        errorMessage: 'cancel failed',
+      });
+
+      service.handleTelemetry({ battery_charge_pct: 80 } as never, 'OB');
+      alert.show.mockClear();
+
+      service.handleTelemetry({ battery_charge_pct: 80 } as never, 'OL');
+      await flushAsyncShutdownWork();
+
+      expect(alert.show).toHaveBeenCalledTimes(1);
+      expect(alert.show.mock.calls[0][0]).toMatchObject({
+        type: 'critical',
+        title: 'batterySafety.shutdownCommandFailedTitle',
+        body: 'batterySafety.shutdownCommandFailedBody',
+        showShutdown: false,
+      });
+      expect(
+        service.getDecisionLog().some((entry) =>
+          entry.event === 'failure' &&
+          entry.decision.type === 'cancelShutdownCountdown' &&
+          entry.execution?.command === 'shutdown.exe /a',
+        ),
+      ).toBe(true);
+      expect(warnSpy).toHaveBeenCalled();
+    } finally {
+      warnSpy.mockRestore();
+    }
   });
 });
 

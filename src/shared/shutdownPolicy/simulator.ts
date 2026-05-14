@@ -6,6 +6,7 @@ import type {
   ShutdownPolicyRule,
 } from './types';
 import { evaluatePolicyCondition } from './evaluation';
+import { compareShutdownPolicyRuleResults } from './ordering';
 
 export type ShutdownPolicySimulationRuleResult = {
   rule: ShutdownPolicyRule;
@@ -19,13 +20,6 @@ export type ShutdownPolicySimulationResult = {
   decision: ShutdownPolicyDecision;
   selectedRule?: ShutdownPolicyRule;
   ruleResults: ShutdownPolicySimulationRuleResult[];
-};
-
-const severityRank = {
-  info: 0,
-  warning: 1,
-  critical: 2,
-  forced: 3,
 };
 
 export function simulateShutdownPolicy(
@@ -78,7 +72,15 @@ export function simulateShutdownPolicy(
 
   const selected = ruleResults
     .filter((result) => result.matched)
-    .sort(compareRuleResults)[0];
+    .reduce<ShutdownPolicySimulationRuleResult | undefined>((best, result) => {
+      if (!best) {
+        return result;
+      }
+
+      return compareShutdownPolicyRuleResults(result, best) > 0
+        ? result
+        : best;
+    }, undefined);
   const cancellation = simulateActiveCountdownCancellation(
     config,
     context,
@@ -129,12 +131,12 @@ function simulateActiveCountdownCancellation(
   if (
     selected &&
     isShutdownAction(selected.rule) &&
-    compareRuleResults(selected, {
+    compareShutdownPolicyRuleResults(selected, {
       rule: activeRule,
       order: activeRuleOrder,
       matched: true,
       condition: cancelResult,
-    }) < 0
+    }) > 0
   ) {
     return null;
   }
@@ -152,23 +154,6 @@ function simulateActiveCountdownCancellation(
         : r,
     ),
   };
-}
-
-function compareRuleResults(
-  left: ShutdownPolicySimulationRuleResult,
-  right: ShutdownPolicySimulationRuleResult,
-): number {
-  if (left.rule.priority !== right.rule.priority) {
-    return right.rule.priority - left.rule.priority;
-  }
-
-  const severityDiff =
-    severityRank[right.rule.severity] - severityRank[left.rule.severity];
-  if (severityDiff !== 0) {
-    return severityDiff;
-  }
-
-  return left.order - right.order;
 }
 
 function createDecision(rule: ShutdownPolicyRule): ShutdownPolicyDecision {

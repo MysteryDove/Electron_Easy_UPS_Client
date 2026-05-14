@@ -660,6 +660,42 @@ export class BatterySafetyService {
     });
   }
 
+  private releaseFailedShutdownDecision(decision: ShutdownPolicyDecision): void {
+    const ruleId = getDecisionRuleId(decision);
+    if (!ruleId) {
+      return;
+    }
+
+    this.appliedRuleIds.delete(ruleId);
+    if (this.activeCountdownRuleId === ruleId) {
+      this.activeCountdownRuleId = null;
+    }
+    if (ruleId === DEFAULT_FSD_SHUTDOWN_RULE_ID) {
+      this.fsdActive = false;
+      this.fsdShutdownCommitted = false;
+    }
+    this.policyEngine.releaseFailedDecision(ruleId);
+  }
+
+  private handleShutdownExecutionResult(
+    decision: ShutdownPolicyDecision,
+    context: ShutdownPolicyContext,
+    result: ShutdownExecutionResult,
+  ): void {
+    this.recordExecutionResult(decision, context, result);
+
+    if (result.success) {
+      return;
+    }
+
+    this.releaseFailedShutdownDecision(decision);
+    console.error(
+      '[BatterySafetyService] Failed to execute shutdown action.',
+      result.errorMessage ?? result.message,
+    );
+    this.showShutdownExecutionFailure(result);
+  }
+
   private buildConditionExplanation(
     decision: ShutdownPolicyDecision,
     context: ShutdownPolicyContext,
@@ -714,17 +750,17 @@ export class BatterySafetyService {
     context: ShutdownPolicyContext,
     decision: ShutdownPolicyDecision,
   ): void {
-    void this.shutdownExecutor.execute(method).then((result) => {
-      this.recordExecutionResult(decision, context, result);
-
-      if (!result.success) {
-        console.error(
-          '[BatterySafetyService] Failed to execute shutdown action.',
-          result.errorMessage ?? result.message,
+    void this.shutdownExecutor.execute(method)
+      .then((result) => {
+        this.handleShutdownExecutionResult(decision, context, result);
+      })
+      .catch((error: unknown) => {
+        this.handleShutdownExecutionResult(
+          decision,
+          context,
+          createUnexpectedShutdownExecutionResult(method, error),
         );
-        this.showShutdownExecutionFailure(result);
-      }
-    });
+      });
   }
 
   private cancelPendingShutdown(
@@ -774,6 +810,19 @@ export class BatterySafetyService {
 
 function getDecisionRuleId(decision: ShutdownPolicyDecision): string | undefined {
   return decision.type === 'none' ? undefined : decision.ruleId;
+}
+
+function createUnexpectedShutdownExecutionResult(
+  method: 'sleep' | 'shutdown',
+  error: unknown,
+): ShutdownExecutionResult {
+  return {
+    method,
+    platform: process.platform,
+    supported: true,
+    success: false,
+    errorMessage: error instanceof Error ? error.message : String(error),
+  };
 }
 
 function formatExecutionSummary(result: ShutdownExecutionResult): string {

@@ -7,6 +7,25 @@ active countdown.
 
 The policy editor is in Settings under Shutdown Policy.
 
+## Upgrading from Legacy Settings
+
+Existing battery and FSD settings migrate automatically to shutdown policy
+rules on first launch after upgrade.
+
+If your old configuration had `battery.shutdownEnabled = true` and
+`battery.criticalShutdownAlertEnabled = false`, the migration also enables
+Allow immediate shutdown so the upgraded policy keeps the same quiet-shutdown
+behavior. You can review or change that in Settings > Shutdown Policy >
+Advanced > Safety.
+
+The default hold times were also raised from `0` seconds to short non-zero
+values to suppress single-poll glitches: battery warning waits 5 seconds,
+battery shutdown waits 10 seconds, FSD waits 3 seconds, the runtime rule
+template waits 10 seconds, and the communication-loss fail-safe waits 5
+seconds after its `secondsOnBattery >= 60` and poll-loss thresholds are both
+met. See the [release notice](SHUTDOWN_POLICY_RELEASE_NOTICE.md) for the full
+upgrade table.
+
 ## Simple Mode
 
 Simple mode is the recommended mode for most installations. It keeps the same
@@ -32,6 +51,10 @@ token. When enabled, the default FSD rule starts a shutdown countdown as soon as
 FSD is seen. The FSD rule has higher priority than ordinary battery rules and is
 not cancelled just because the UPS also reports online status.
 
+Saving settings while an FSD countdown is active does not clear that countdown.
+The overlay and shutdown state stay active until the configured FSD behavior is
+resolved.
+
 ## Communication-Loss Fail-Safe
 
 The communication-loss rule is available but disabled by default. When enabled,
@@ -42,6 +65,22 @@ Use this only when loss of NUT communication during an outage should be treated
 as unsafe. The rule uses normalized connection state and
 `connection.secondsSinceLastSuccessfulPoll`, so it is independent of raw NUT
 variable names.
+
+The fail-safe also tracks stale telemetry more reliably during an outage. If
+polling still reports `connected` but UPS status has stopped updating beyond the
+grace window, the previously-on-battery timing continues instead of resetting to
+zero.
+
+## Advanced Safety Settings
+
+Advanced mode includes safety toggles that gate the riskiest actions.
+
+- Allow immediate shutdown is off by default unless migration preserved a
+  legacy quiet-shutdown setup.
+- Rules that use `cancelShutdownCountdown` are rejected unless Allow FSD
+  auto-cancel is enabled.
+- FSD remains higher priority than ordinary battery rules and is not cancelled
+  just because the UPS also reports online status.
 
 ## Runtime Remaining Rules
 

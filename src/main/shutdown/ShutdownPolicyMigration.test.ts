@@ -1,4 +1,4 @@
-import { describe, expect, it } from 'vitest';
+import { describe, expect, it, vi } from 'vitest';
 import {
   DEFAULT_BATTERY_SHUTDOWN_RULE_ID,
   DEFAULT_FSD_SHUTDOWN_RULE_ID,
@@ -35,7 +35,7 @@ describe('migrateLegacyShutdownPolicyConfig', () => {
     );
 
     expect(policy.mode).toBe('simple');
-    expect(policy.safety.requireHoldForShutdownSeconds).toBe(0);
+    expect(policy.safety.requireHoldForShutdownSeconds).toBe(5);
     expect(batteryRule?.enabled).toBe(true);
     expect(batteryRule?.action).toEqual({
       type: 'startShutdownCountdown',
@@ -136,6 +136,76 @@ describe('migrateLegacyShutdownPolicyConfig', () => {
       type: 'shutdownNow',
       method: 'sleep',
     });
+  });
+
+  it('falls back to migrated defaults when an existing advanced policy no longer satisfies the schema', () => {
+    const warn = vi.spyOn(console, 'warn').mockImplementation(() => undefined);
+
+    try {
+      const migrated = migrateLegacyShutdownPolicyConfig(
+        {
+          battery: {
+            warningPct: 40,
+            shutdownPct: 20,
+            warningToastEnabled: true,
+            shutdownEnabled: true,
+            criticalAlertEnabled: true,
+            criticalShutdownAlertEnabled: true,
+            shutdownCountdownSeconds: 60,
+            shutdownMethod: 'shutdown',
+          },
+          fsd: {
+            shutdownEnabled: true,
+            shutdownDelaySeconds: 30,
+            shutdownMethod: 'shutdown',
+            overlayEnabled: true,
+          },
+        },
+        {
+          version: 1,
+          mode: 'advanced',
+          safety: {
+            requireHoldForShutdownSeconds: 0,
+            maxCountdownSeconds: 300,
+            allowImmediateShutdown: false,
+            allowFsdAutoCancel: false,
+          },
+          rules: [
+            {
+              id: 'invalid-advanced-rule',
+              name: 'Invalid advanced rule',
+              enabled: true,
+              priority: 100,
+              severity: 'critical',
+              trigger: { field: 'ups.onBattery', op: 'eq', value: true },
+              holdForSeconds: 0,
+              action: {
+                type: 'startShutdownCountdown',
+                countdownSeconds: 60,
+                method: 'shutdown',
+              },
+              createdBy: 'user',
+            },
+          ],
+        },
+      );
+
+      expect(migrated.rules.find((rule) => rule.id === 'invalid-advanced-rule')).toBeUndefined();
+      expect(migrated.safety.requireHoldForShutdownSeconds).toBe(5);
+      expect(migrated.rules.find((rule) =>
+        rule.id === DEFAULT_BATTERY_SHUTDOWN_RULE_ID,
+      )?.action).toEqual({
+        type: 'startShutdownCountdown',
+        countdownSeconds: 60,
+        method: 'shutdown',
+      });
+      expect(warn).toHaveBeenCalledWith(
+        '[ShutdownPolicyMigration] Existing advanced policy failed schema validation; falling back to migrated simple policy.',
+        expect.any(Object),
+      );
+    } finally {
+      warn.mockRestore();
+    }
   });
 
   it('does not overwrite existing advanced policies', () => {

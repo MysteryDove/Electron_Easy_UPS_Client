@@ -81,6 +81,11 @@ export class ShutdownPolicyEngine {
     this.runtimeState.reset();
   }
 
+  public releaseFailedDecision(ruleId: string): void {
+    this.runtimeState.clearRuleDecision(ruleId);
+    this.runtimeState.clearActiveCountdown(ruleId);
+  }
+
   private evaluateRules(
     context: ShutdownPolicyContext,
   ): ShutdownPolicyDecisionCandidate[] {

@@ -88,7 +88,7 @@ describe('shutdown policy config schema', () => {
     expect(defaultAppConfig.shutdownPolicy.version).toBe(1);
     expect(defaultAppConfig.shutdownPolicy.mode).toBe('simple');
     expect(defaultAppConfig.shutdownPolicy.safety).toEqual({
-      requireHoldForShutdownSeconds: 0,
+      requireHoldForShutdownSeconds: 5,
       maxCountdownSeconds: 300,
       allowImmediateShutdown: false,
       allowFsdAutoCancel: false,
@@ -124,7 +124,7 @@ describe('shutdown policy config schema', () => {
 
     const result = applyConfigPatch(defaultAppConfig, patch);
     expect(result.shutdownPolicy.safety.maxCountdownSeconds).toBe(120);
-    expect(result.shutdownPolicy.safety.requireHoldForShutdownSeconds).toBe(0);
+    expect(result.shutdownPolicy.safety.requireHoldForShutdownSeconds).toBe(5);
   });
 
   it('rebuilds simple battery policy patches into valid engine-driven rules', () => {

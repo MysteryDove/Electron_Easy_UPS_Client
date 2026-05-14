@@ -177,9 +177,19 @@ function validateConditionLeaf(
 }
 
 export function conditionContainsFsdTrigger(condition: PolicyCondition): boolean {
-  return conditionHasPositiveLeaf(condition, (leaf) =>
-    leaf.field === 'ups.fsd' && leaf.op === 'eq' && leaf.value === true,
-  );
+  if ('all' in condition) {
+    return condition.all.some((child) => conditionContainsFsdTrigger(child));
+  }
+
+  if ('any' in condition) {
+    return condition.any.some((child) => conditionContainsFsdTrigger(child));
+  }
+
+  if ('not' in condition) {
+    return conditionContainsFsdReference(condition.not);
+  }
+
+  return condition.field === 'ups.fsd' && condition.op === 'eq' && condition.value === true;
 }
 
 export function conditionContainsSafeShutdownTrigger(
@@ -240,4 +250,20 @@ function conditionHasPositiveLeaf(
   }
 
   return predicate(condition);
+}
+
+function conditionContainsFsdReference(condition: PolicyCondition): boolean {
+  if ('all' in condition) {
+    return condition.all.some((child) => conditionContainsFsdReference(child));
+  }
+
+  if ('any' in condition) {
+    return condition.any.some((child) => conditionContainsFsdReference(child));
+  }
+
+  if ('not' in condition) {
+    return conditionContainsFsdReference(condition.not);
+  }
+
+  return condition.field === 'ups.fsd';
 }
