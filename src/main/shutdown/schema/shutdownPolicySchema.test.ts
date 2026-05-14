@@ -188,6 +188,60 @@ describe('shutdownPolicySchema', () => {
     const result = shutdownPolicySchema.safeParse(config);
     expect(result.success).toBe(false);
   });
+
+  // L2-F1 (Phase 0) — schema-level defense in depth: user-authored rules whose
+  // action emits cancelShutdownCountdown can otherwise silently abort an active
+  // FSD shutdown via BatterySafetyService.cancelPolicyCountdown.
+  it('rejects user-created cancelShutdownCountdown rules when allowFsdAutoCancel is false', () => {
+    const config = makeConfig([
+      makeRule({
+        id: 'user-cancel-on-online',
+        action: { type: 'cancelShutdownCountdown' },
+        cancelWhen: undefined,
+        trigger: { field: 'ups.online', op: 'eq', value: true },
+      }),
+    ]);
+
+    const result = shutdownPolicySchema.safeParse(config);
+    expect(result.success).toBe(false);
+  });
+
+  it('allows user-created cancelShutdownCountdown rules when allowFsdAutoCancel is true', () => {
+    const config = makeConfig(
+      [
+        makeRule({
+          id: 'user-cancel-on-online',
+          action: { type: 'cancelShutdownCountdown' },
+          cancelWhen: undefined,
+          trigger: { field: 'ups.online', op: 'eq', value: true },
+        }),
+      ],
+      {
+        safety: {
+          ...defaultShutdownPolicyConfig.safety,
+          allowFsdAutoCancel: true,
+        },
+      },
+    );
+
+    const result = shutdownPolicySchema.safeParse(config);
+    expect(result.success).toBe(true);
+  });
+
+  it('allows system-created cancelShutdownCountdown rules regardless of allowFsdAutoCancel', () => {
+    const config = makeConfig([
+      makeRule({
+        id: 'system-cancel-on-online',
+        action: { type: 'cancelShutdownCountdown' },
+        cancelWhen: undefined,
+        trigger: { field: 'ups.online', op: 'eq', value: true },
+        createdBy: 'system',
+      }),
+    ]);
+
+    const result = shutdownPolicySchema.safeParse(config);
+    expect(result.success).toBe(true);
+  });
 });
 
 function makeConfig(

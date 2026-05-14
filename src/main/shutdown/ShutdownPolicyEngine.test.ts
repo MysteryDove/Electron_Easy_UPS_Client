@@ -405,6 +405,67 @@ describe('ShutdownPolicyEngine', () => {
       },
     });
   });
+
+  // L5-B2 (Phase 0) — when the engine returns a cancellation decision via the
+  // active-countdown cancelWhen path, the cancelling rule's cooldown must be
+  // recorded; otherwise the same trigger immediately re-arms the countdown.
+  it('applies cooldown to the cancelled rule when an active countdown is cancelled via cancelWhen', () => {
+    const engine = new ShutdownPolicyEngine(makeConfig([
+      makeRule({
+        id: 'battery-countdown-with-cooldown',
+        priority: 100,
+        severity: 'critical',
+        trigger: {
+          all: [
+            { field: 'ups.onBattery', op: 'eq', value: true },
+            { field: 'battery.chargePercent', op: 'lte', value: 20 },
+          ],
+        },
+        action: {
+          type: 'startShutdownCountdown',
+          countdownSeconds: 60,
+          method: 'shutdown',
+        },
+        cancelWhen: {
+          all: [
+            { field: 'ups.online', op: 'eq', value: true },
+            { field: 'ups.fsd', op: 'eq', value: false },
+          ],
+        },
+        cooldownSeconds: 30,
+      }),
+    ]));
+
+    // t=0: low battery on battery — countdown starts
+    expect(engine.evaluate(makeContext({
+      now: 0,
+      battery: { chargePercent: 10 },
+    })).type).toBe('startShutdownCountdown');
+
+    // t=1000: power returns — cancelWhen matches, cancellation returned
+    expect(engine.evaluate(makeContext({
+      now: 1000,
+      ups: {
+        online: true,
+        onBattery: false,
+        lowBattery: false,
+        fsd: false,
+        statusTokens: ['OL'],
+      },
+    })).type).toBe('cancelShutdownCountdown');
+
+    // t=2000: trigger matches again but rule is in cooldown — no decision
+    expect(engine.evaluate(makeContext({
+      now: 2000,
+      battery: { chargePercent: 10 },
+    }))).toEqual({ type: 'none' });
+
+    // t=32000: cooldown elapsed (1000 + 30s = 31000) — countdown can re-arm
+    expect(engine.evaluate(makeContext({
+      now: 32_000,
+      battery: { chargePercent: 10 },
+    })).type).toBe('startShutdownCountdown');
+  });
 });
 
 function makeConfig(rules: ShutdownPolicyRule[]): ShutdownPolicyConfig {

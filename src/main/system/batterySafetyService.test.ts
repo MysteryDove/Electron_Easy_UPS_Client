@@ -865,6 +865,161 @@ describe('BatterySafetyService — LB fallback without battery.charge', () => {
   });
 });
 
+// ── Phase 0 safety hotfix regressions ──────────────────────────────
+// Covers:
+//   L2-F1 (CRITICAL): user-authored cancelShutdownCountdown rules must not be
+//     able to defeat an active FSD shutdown through cancelPolicyCountdown.
+//   L2-F4 (MAJOR):    handleConfigUpdated must preserve activeCountdownRuleId
+//     and the corresponding appliedRuleIds entry when fsdShutdownCommitted.
+
+describe('BatterySafetyService — Phase 0 safety hotfixes', () => {
+  function makeConfig(shutdownPolicy?: ShutdownPolicyConfig) {
+    return {
+      battery: {
+        warningPct: 40,
+        shutdownPct: 20,
+        warningToastEnabled: false,
+        shutdownEnabled: false,
+        criticalAlertEnabled: false,
+        criticalShutdownAlertEnabled: false,
+        shutdownCountdownSeconds: 45,
+        shutdownMethod: 'sleep' as const,
+      },
+      fsd: {
+        shutdownEnabled: true,
+        shutdownDelaySeconds: 10,
+        shutdownMethod: 'shutdown' as const,
+        overlayEnabled: true,
+      },
+      shutdownPolicy,
+      nut: {} as never,
+      polling: {} as never,
+      data: {} as never,
+      debug: { level: 'off' } as never,
+      startup: {} as never,
+      theme: {} as never,
+      i18n: {} as never,
+      dashboard: {} as never,
+      wizard: {} as never,
+      line: {} as never,
+    };
+  }
+
+  function makeMockCriticalAlert() {
+    return {
+      show: vi.fn(),
+      dismiss: vi.fn(),
+      isShowing: false,
+    };
+  }
+
+  // Advanced policy: default FSD rule PLUS a user-authored cancel rule whose
+  // trigger is plain ups.online==true. Pre-fix this rule defeated FSD.
+  function makePolicyWithUserCancelRule(): ShutdownPolicyConfig {
+    return {
+      version: 1,
+      mode: 'advanced',
+      safety: {
+        requireHoldForShutdownSeconds: 0,
+        maxCountdownSeconds: 300,
+        allowImmediateShutdown: false,
+        // allowFsdAutoCancel intentionally false — this is the scenario the
+        // L2-F1 service-level guard must protect against, separately from the
+        // schema-level rejection.
+        allowFsdAutoCancel: false,
+      },
+      rules: [
+        {
+          id: 'default-fsd-shutdown',
+          name: 'FSD shutdown',
+          enabled: true,
+          priority: 1000,
+          severity: 'forced',
+          trigger: { field: 'ups.fsd', op: 'eq', value: true },
+          action: {
+            type: 'startShutdownCountdown',
+            countdownSeconds: 12,
+            method: 'shutdown',
+          },
+          cancelWhen: null,
+          createdBy: 'system',
+        },
+        {
+          id: 'user-cancel-on-online',
+          name: 'Cancel on online (user)',
+          enabled: true,
+          priority: 500,
+          severity: 'info',
+          trigger: { field: 'ups.online', op: 'eq', value: true },
+          action: { type: 'cancelShutdownCountdown' },
+          // createdBy: 'system' so the schema does not reject this rule
+          // independently. The runtime service-level guard is what we exercise.
+          createdBy: 'system',
+        },
+      ],
+    };
+  }
+
+  it('does not let a user cancelShutdownCountdown decision defeat an active FSD shutdown', async () => {
+    const { BatterySafetyService } = await import('./batterySafetyService');
+    const alert = makeMockCriticalAlert();
+    const service = new BatterySafetyService(
+      makeConfig(makePolicyWithUserCancelRule()) as never,
+      alert as never,
+    );
+
+    // FSD detected on battery — FSD overlay shows, fsdShutdownCommitted set.
+    service.handleTelemetry({ battery_charge_pct: 80 } as never, 'OB FSD');
+    expect(alert.show).toHaveBeenCalledTimes(1);
+    const initialLogLength = service.getDecisionLog().length;
+
+    // Clear so we can observe whether any *additional* dismiss happens.
+    alert.dismiss.mockClear();
+
+    // Next poll: UPS reports OL. The user cancel rule's trigger now matches,
+    // so the engine emits cancelShutdownCountdown for 'user-cancel-on-online'.
+    // The service-level FSD guard MUST suppress it.
+    service.handleTelemetry({ battery_charge_pct: 80 } as never, 'OL');
+
+    // Observable signals that the cancel decision was suppressed:
+    // 1) No additional dismiss on the critical alert.
+    expect(alert.dismiss).not.toHaveBeenCalled();
+    // 2) No new 'cancellation' event in the decision log.
+    const newCancellations = service
+      .getDecisionLog()
+      .slice(0, service.getDecisionLog().length - initialLogLength)
+      .filter((entry) => entry.event === 'cancellation');
+    expect(newCancellations).toHaveLength(0);
+  });
+
+  it('preserves activeCountdownRuleId and appliedRuleIds for FSD across handleConfigUpdated', async () => {
+    const { BatterySafetyService } = await import('./batterySafetyService');
+    const alert = makeMockCriticalAlert();
+    const service = new BatterySafetyService(makeConfig() as never, alert as never);
+
+    // Start FSD — fsdShutdownCommitted=true and activeCountdownRuleId set.
+    service.handleTelemetry({ battery_charge_pct: 80 } as never, 'OL FSD');
+    expect(alert.show).toHaveBeenCalledTimes(1);
+    alert.dismiss.mockClear();
+
+    // Apply a config update that swaps the policy. Pre-fix this would wipe
+    // activeCountdownRuleId and appliedRuleIds, leaving the overlay visible
+    // but the engine/service decoupled — widening the L2-F1 attack surface.
+    service.handleConfigUpdated(makeConfig() as never);
+
+    // The overlay must NOT have been dismissed because FSD is still committed.
+    expect(alert.dismiss).not.toHaveBeenCalled();
+
+    // After a subsequent OL telemetry tick (no FSD), the service must still
+    // treat FSD as committed — meaning the overlay survives and the engine's
+    // cancel paths remain suppressed. Without the L2-F4 fix, activeCountdownRuleId
+    // had been cleared by handleConfigUpdated and applyDecision could fire a
+    // cancellation again.
+    service.handleTelemetry({ battery_charge_pct: 80 } as never, 'OL');
+    expect(alert.dismiss).not.toHaveBeenCalled();
+  });
+});
+
 async function flushAsyncShutdownWork(): Promise<void> {
   await Promise.resolve();
   await Promise.resolve();
