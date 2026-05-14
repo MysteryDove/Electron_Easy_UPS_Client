@@ -122,6 +122,19 @@ export class BatterySafetyService {
     const hadCancellableCountdown =
       this.activeCountdownRuleId !== null && !this.fsdShutdownCommitted;
 
+    // PRESERVE FSD STATE across config swaps. Previously this method reset
+    // `activeCountdownRuleId` and `appliedRuleIds` unconditionally, leaving an
+    // active FSD overlay visible while the engine and service forgot which rule
+    // owned the countdown. That widened the L2-F1 attack surface: after a config
+    // save, even the (post-fix) FSD guard could not associate a future cancel
+    // decision with the still-armed FSD. Capture state before the swap so we can
+    // restore it for the FSD-committed case.
+    const fsdWasCommitted = this.fsdShutdownCommitted;
+    const fsdCountdownRuleId =
+      fsdWasCommitted && this.activeCountdownRuleId !== null
+        ? this.activeCountdownRuleId
+        : null;
+
     this.batteryConfig = config.battery;
     this.policyConfig = resolvePolicyConfig(config);
     this.policyEngine = new ShutdownPolicyEngine(this.policyConfig);
@@ -129,6 +142,15 @@ export class BatterySafetyService {
     this.appliedRuleIds.clear();
     this.activeCountdownRuleId = null;
     this.lastOnBattery = false;
+
+    if (fsdCountdownRuleId !== null) {
+      // The new policy engine instance starts with no in-memory countdown; the
+      // overlay is still shown to the user. Re-link the service-level FSD state
+      // so cancelPolicyCountdown's fsdShutdownCommitted guard still protects it
+      // and applyDecision branches that key off DEFAULT_FSD_SHUTDOWN_RULE_ID work.
+      this.activeCountdownRuleId = fsdCountdownRuleId;
+      this.appliedRuleIds.add(fsdCountdownRuleId);
+    }
 
     if (hadCancellableCountdown) {
       this.cancelPendingShutdown();
@@ -379,11 +401,18 @@ export class BatterySafetyService {
   private cancelPolicyCountdown(
     decision: Extract<ShutdownPolicyDecision, { type: 'cancelShutdownCountdown' }>,
   ): void {
-    const { ruleId } = decision;
-    if (this.fsdShutdownCommitted && ruleId === DEFAULT_FSD_SHUTDOWN_RULE_ID) {
+    // SAFETY INVARIANT: FSD shutdowns are non-cancellable through the policy engine.
+    // Previously this guard checked `ruleId === DEFAULT_FSD_SHUTDOWN_RULE_ID`, which
+    // let a user-authored rule whose `action.type === 'cancelShutdownCountdown'`
+    // (with any ruleId) call `cancelPendingShutdown()` — silently aborting the queued
+    // OS-level FSD shutdown while the overlay still ticked down. Violates §8.3 of
+    // shutdown_policy_implementation_plan.md and Definition-of-Done #5.
+    // Fix: any committed FSD shutdown is sticky, regardless of the cancelling rule.
+    if (this.fsdShutdownCommitted) {
       return;
     }
 
+    const { ruleId } = decision;
     const context = this.latestContext;
     if (context) {
       this.recordDecision(decision, context, 'cancellation');
@@ -392,10 +421,7 @@ export class BatterySafetyService {
     this.activeCountdownRuleId = null;
     this.appliedRuleIds.delete(ruleId);
     this.cancelPendingShutdown(context, decision);
-
-    if (!this.fsdShutdownCommitted) {
-      this.criticalAlert.dismiss();
-    }
+    this.criticalAlert.dismiss();
   }
 
   private resolveDisplayBatteryPercent(context: ShutdownPolicyContext): number {
@@ -634,6 +660,42 @@ export class BatterySafetyService {
     });
   }
 
+  private releaseFailedShutdownDecision(decision: ShutdownPolicyDecision): void {
+    const ruleId = getDecisionRuleId(decision);
+    if (!ruleId) {
+      return;
+    }
+
+    this.appliedRuleIds.delete(ruleId);
+    if (this.activeCountdownRuleId === ruleId) {
+      this.activeCountdownRuleId = null;
+    }
+    if (ruleId === DEFAULT_FSD_SHUTDOWN_RULE_ID) {
+      this.fsdActive = false;
+      this.fsdShutdownCommitted = false;
+    }
+    this.policyEngine.releaseFailedDecision(ruleId);
+  }
+
+  private handleShutdownExecutionResult(
+    decision: ShutdownPolicyDecision,
+    context: ShutdownPolicyContext,
+    result: ShutdownExecutionResult,
+  ): void {
+    this.recordExecutionResult(decision, context, result);
+
+    if (result.success) {
+      return;
+    }
+
+    this.releaseFailedShutdownDecision(decision);
+    console.error(
+      '[BatterySafetyService] Failed to execute shutdown action.',
+      result.errorMessage ?? result.message,
+    );
+    this.showShutdownExecutionFailure(result);
+  }
+
   private buildConditionExplanation(
     decision: ShutdownPolicyDecision,
     context: ShutdownPolicyContext,
@@ -688,17 +750,17 @@ export class BatterySafetyService {
     context: ShutdownPolicyContext,
     decision: ShutdownPolicyDecision,
   ): void {
-    void this.shutdownExecutor.execute(method).then((result) => {
-      this.recordExecutionResult(decision, context, result);
-
-      if (!result.success) {
-        console.error(
-          '[BatterySafetyService] Failed to execute shutdown action.',
-          result.errorMessage ?? result.message,
+    void this.shutdownExecutor.execute(method)
+      .then((result) => {
+        this.handleShutdownExecutionResult(decision, context, result);
+      })
+      .catch((error: unknown) => {
+        this.handleShutdownExecutionResult(
+          decision,
+          context,
+          createUnexpectedShutdownExecutionResult(method, error),
         );
-        this.showShutdownExecutionFailure(result);
-      }
-    });
+      });
   }
 
   private cancelPendingShutdown(
@@ -748,6 +810,19 @@ export class BatterySafetyService {
 
 function getDecisionRuleId(decision: ShutdownPolicyDecision): string | undefined {
   return decision.type === 'none' ? undefined : decision.ruleId;
+}
+
+function createUnexpectedShutdownExecutionResult(
+  method: 'sleep' | 'shutdown',
+  error: unknown,
+): ShutdownExecutionResult {
+  return {
+    method,
+    platform: process.platform,
+    supported: true,
+    success: false,
+    errorMessage: error instanceof Error ? error.message : String(error),
+  };
 }
 
 function formatExecutionSummary(result: ShutdownExecutionResult): string {

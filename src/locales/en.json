@@ -281,6 +281,7 @@
         "shutdownPolicyMode": "Policy mode",
         "shutdownPolicySimple": "Simple recommended policy",
         "shutdownPolicyAdvanced": "Advanced custom policy",
+        "shutdownPolicyAdvancedWarning": "Switching to advanced mode keeps the generated simple rules and lets you edit them directly.",
         "policyCommunicationLossEnable": "Shutdown if communication is lost while previously on battery",
         "policyCommunicationLossAfter": "Communication lost after (sec)",
         "policyCountdownSeconds": "Countdown (sec)",

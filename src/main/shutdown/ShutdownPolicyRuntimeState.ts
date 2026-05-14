@@ -68,8 +68,22 @@ export class ShutdownPolicyRuntimeState {
     this.activeCountdown = countdown;
   }
 
-  public clearActiveCountdown(): void {
+  public clearActiveCountdown(ruleId?: string): void {
+    if (ruleId !== undefined && this.activeCountdown?.ruleId !== ruleId) {
+      return;
+    }
+
     this.activeCountdown = null;
+  }
+
+  public clearRuleDecision(ruleId: string): void {
+    const state = this.ruleStates.get(ruleId);
+    if (!state) {
+      return;
+    }
+
+    state.lastDecisionAt = undefined;
+    state.cooldownUntil = undefined;
   }
 
   private getRuleState(ruleId: string): ShutdownPolicyRuleRuntimeState {

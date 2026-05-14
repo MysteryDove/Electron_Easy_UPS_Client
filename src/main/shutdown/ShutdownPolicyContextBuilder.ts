@@ -50,7 +50,12 @@ export class ShutdownPolicyContextBuilder {
   }
 
   public build(input: ShutdownPolicyContextBuilderInput): ShutdownPolicyContext {
-    const now = input.now ?? Date.now();
+    const reportedNow = input.now ?? Date.now();
+    // Keep time monotonic across build calls so stale or out-of-order caller
+    // timestamps do not rewind duration tracking.
+    const now = this.lastContextNow === null
+      ? reportedNow
+      : Math.max(this.lastContextNow, reportedNow);
     const values = input.values ?? {};
     const rawStatusTokens = parseUpsStatusTokens(input.rawUpsStatus);
     const hasFreshStatus = rawStatusTokens.length > 0;
@@ -103,7 +108,7 @@ export class ShutdownPolicyContextBuilder {
     const wasLastKnownOnBattery = this.lastKnownStatusTokens.includes('OB');
     const assumePreviouslyOnBatteryDuringConnectionLoss =
       !hasFreshStatus &&
-      baseConnectionState !== 'connected' &&
+      !canUseStaleStatus &&
       wasLastKnownOnBattery;
 
     this.secondsOnBattery = advanceDuration(

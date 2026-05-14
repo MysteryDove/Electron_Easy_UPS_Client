@@ -220,6 +220,18 @@ export function ShutdownPolicySettingsSection({
                 return;
               }
 
+              if (
+                policy.mode === 'simple' &&
+                !window.confirm(
+                  t(
+                    'settings.shutdownPolicyAdvancedWarning',
+                    'Switching to advanced mode keeps the generated simple rules and lets you edit them directly.',
+                  ),
+                )
+              ) {
+                return;
+              }
+
               void savePolicy({
                 ...policy,
                 mode: 'advanced',
@@ -890,7 +902,8 @@ function PolicyRuleEditor({
                 const nextOperator =
                   POLICY_FIELD_METADATA[field].supportedOperators[0];
                 onUpdate({
-                  trigger: createEditableTrigger(
+                  trigger: updateEditableTrigger(
+                    rule.trigger,
                     field,
                     nextOperator,
                     defaultValueForField(field),
@@ -917,7 +930,8 @@ function PolicyRuleEditor({
               onChange={(event) => {
                 const operator = event.target.value as PolicyOperator;
                 onUpdate({
-                  trigger: createEditableTrigger(
+                  trigger: updateEditableTrigger(
+                    rule.trigger,
                     editableCondition.field,
                     operator,
                     editableCondition.value,
@@ -944,7 +958,8 @@ function PolicyRuleEditor({
               value={String(editableCondition.value ?? '')}
               onChange={(event) => {
                 onUpdate({
-                  trigger: createEditableTrigger(
+                  trigger: updateEditableTrigger(
+                    rule.trigger,
                     editableCondition.field,
                     editableCondition.operator,
                     parseConditionValue(
@@ -963,7 +978,8 @@ function PolicyRuleEditor({
             checked={editableCondition.requireOnBattery}
             onChange={(event) =>
               onUpdate({
-                trigger: createEditableTrigger(
+                trigger: updateEditableTrigger(
+                  rule.trigger,
                   editableCondition.field,
                   editableCondition.operator,
                   editableCondition.value,
@@ -1153,10 +1169,7 @@ function createEditableTrigger(
   value: string | number | boolean | undefined,
   requireOnBattery: boolean,
 ): PolicyCondition {
-  const leaf: PolicyCondition =
-    operator === 'exists' || operator === 'notExists'
-      ? { field, op: operator }
-      : { field, op: operator, value };
+  const leaf = createEditableLeaf(field, operator, value);
 
   if (!requireOnBattery) {
     return leaf;
@@ -1168,6 +1181,23 @@ function createEditableTrigger(
       leaf,
     ],
   };
+}
+
+function updateEditableTrigger(
+  originalCondition: PolicyCondition,
+  field: PolicyField,
+  operator: PolicyOperator,
+  value: string | number | boolean | undefined,
+  requireOnBattery: boolean,
+): PolicyCondition {
+  const nextLeaf = createEditableLeaf(field, operator, value);
+  const baseCondition = stripOnBatteryRequirement(originalCondition) ?? nextLeaf;
+  const [updatedCondition, replaced] = replaceFirstEditableLeaf(baseCondition, nextLeaf);
+  const nextCondition = replaced ? updatedCondition : nextLeaf;
+
+  return requireOnBattery
+    ? ensureOnBatteryRequirement(nextCondition)
+    : nextCondition;
 }
 
 function conditionIncludesOnBattery(condition: PolicyCondition): boolean {
@@ -1212,6 +1242,140 @@ function findFirstEditableLeaf(
   }
 
   return condition;
+}
+
+function createEditableLeaf(
+  field: PolicyField,
+  operator: PolicyOperator,
+  value: string | number | boolean | undefined,
+): PolicyCondition {
+  return operator === 'exists' || operator === 'notExists'
+    ? { field, op: operator }
+    : { field, op: operator, value };
+}
+
+function replaceFirstEditableLeaf(
+  condition: PolicyCondition,
+  nextLeaf: PolicyCondition,
+): [PolicyCondition, boolean] {
+  if ('all' in condition) {
+    let replaced = false;
+    return [
+      {
+        all: condition.all.map((child) => {
+          if (replaced) {
+            return child;
+          }
+
+          const [nextChild, childReplaced] = replaceFirstEditableLeaf(child, nextLeaf);
+          replaced = childReplaced;
+          return nextChild;
+        }),
+      },
+      replaced,
+    ];
+  }
+
+  if ('any' in condition) {
+    let replaced = false;
+    return [
+      {
+        any: condition.any.map((child) => {
+          if (replaced) {
+            return child;
+          }
+
+          const [nextChild, childReplaced] = replaceFirstEditableLeaf(child, nextLeaf);
+          replaced = childReplaced;
+          return nextChild;
+        }),
+      },
+      replaced,
+    ];
+  }
+
+  if ('not' in condition) {
+    const [nextCondition, replaced] = replaceFirstEditableLeaf(condition.not, nextLeaf);
+    return [{ not: nextCondition }, replaced];
+  }
+
+  return isOnBatteryRequirementLeaf(condition)
+    ? [condition, false]
+    : [nextLeaf, true];
+}
+
+function ensureOnBatteryRequirement(condition: PolicyCondition): PolicyCondition {
+  if (conditionIncludesOnBattery(condition)) {
+    return condition;
+  }
+
+  if ('all' in condition) {
+    return {
+      all: [onBatteryRequirement(), ...condition.all],
+    };
+  }
+
+  return {
+    all: [onBatteryRequirement(), condition],
+  };
+}
+
+function stripOnBatteryRequirement(condition: PolicyCondition): PolicyCondition | null {
+  if ('all' in condition) {
+    const children = condition.all
+      .map((child) => stripOnBatteryRequirement(child))
+      .filter((child): child is PolicyCondition => child !== null);
+    return simplifyConditionGroup('all', children);
+  }
+
+  if ('any' in condition) {
+    const children = condition.any
+      .map((child) => stripOnBatteryRequirement(child))
+      .filter((child): child is PolicyCondition => child !== null);
+    return simplifyConditionGroup('any', children);
+  }
+
+  if ('not' in condition) {
+    const nextCondition = stripOnBatteryRequirement(condition.not);
+    return nextCondition ? { not: nextCondition } : null;
+  }
+
+  return isOnBatteryRequirementLeaf(condition) ? null : condition;
+}
+
+function simplifyConditionGroup(
+  kind: 'all' | 'any',
+  children: PolicyCondition[],
+): PolicyCondition | null {
+  if (children.length === 0) {
+    return null;
+  }
+
+  if (children.length === 1) {
+    return children[0];
+  }
+
+  return kind === 'all'
+    ? { all: children }
+    : { any: children };
+}
+
+function isOnBatteryRequirementLeaf(
+  condition: Extract<PolicyCondition, { field: PolicyField; op: PolicyOperator }>,
+): boolean {
+  return (
+    condition.field === 'ups.onBattery' &&
+    condition.op === 'eq' &&
+    condition.value === true
+  );
+}
+
+function onBatteryRequirement(): PolicyCondition {
+  return {
+    field: 'ups.onBattery',
+    op: 'eq',
+    value: true,
+  };
 }
 
 function parseConditionValue(

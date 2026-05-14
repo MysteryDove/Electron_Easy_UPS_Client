@@ -57,6 +57,26 @@ describe('ShutdownPolicyContextBuilder', () => {
     expect(context.connection.state).toBe('degraded');
   });
 
+  it('continues advancing secondsOnBattery when status is stale beyond grace even if connectionState stays connected', () => {
+    const builder = new ShutdownPolicyContextBuilder({
+      statusStaleGraceSeconds: 15,
+    });
+
+    builder.build({
+      rawUpsStatus: 'OB DISCHRG',
+      connectionState: 'connected',
+      now: 0,
+    });
+    const context = builder.build({
+      rawUpsStatus: null,
+      connectionState: 'connected',
+      now: 20000,
+    });
+
+    expect(context.connection.state).toBe('degraded');
+    expect(context.state.secondsOnBattery).toBe(20);
+  });
+
   it('tracks duration transitions from OB to OL', () => {
     const builder = new ShutdownPolicyContextBuilder();
 
@@ -112,5 +132,16 @@ describe('ShutdownPolicyContextBuilder', () => {
     expect(context.connection.state).toBe('degraded');
     expect(context.connection.secondsSinceLastSuccessfulPoll).toBe(310);
     expect(context.state.secondsOnBattery).toBe(370);
+  });
+
+  it('clamps out-of-order timestamps so duration tracking does not rewind', () => {
+    const builder = new ShutdownPolicyContextBuilder();
+
+    builder.build({ rawUpsStatus: 'OB', now: 10000 });
+    const rewindContext = builder.build({ rawUpsStatus: 'OB', now: 9000 });
+    const context = builder.build({ rawUpsStatus: 'OB', now: 11000 });
+
+    expect(rewindContext.now).toBe(10000);
+    expect(context.state.secondsOnBattery).toBe(1);
   });
 });

@@ -1,4 +1,10 @@
 import { describe, expect, it } from 'vitest';
+import {
+  MAX_POLICY_CONDITIONS_PER_GROUP,
+  MAX_POLICY_HOLD_SECONDS,
+  MAX_SHUTDOWN_POLICY_RULES,
+  MIN_POLICY_HOLD_SECONDS,
+} from '../../../shared/shutdownPolicy/constants';
 import type {
   PolicyCondition,
   ShutdownPolicyConfig,
@@ -90,6 +96,52 @@ describe('shutdownPolicySchema', () => {
     expect(result.success).toBe(false);
   });
 
+  it('rejects rules with holdForSeconds below the minimum boundary', () => {
+    const config = makeConfig([
+      makeRule({
+        action: { type: 'showWarning' },
+        holdForSeconds: MIN_POLICY_HOLD_SECONDS - 1,
+      }),
+    ]);
+
+    const result = shutdownPolicySchema.safeParse(config);
+    expect(result.success).toBe(false);
+  });
+
+  it('rejects rules with holdForSeconds above the maximum boundary', () => {
+    const config = makeConfig([
+      makeRule({
+        action: { type: 'showWarning' },
+        holdForSeconds: MAX_POLICY_HOLD_SECONDS + 1,
+      }),
+    ]);
+
+    const result = shutdownPolicySchema.safeParse(config);
+    expect(result.success).toBe(false);
+  });
+
+  it('accepts rules with holdForSeconds at the exact boundaries', () => {
+    const minimumResult = shutdownPolicySchema.safeParse(
+      makeConfig([
+        makeRule({
+          action: { type: 'showWarning' },
+          holdForSeconds: MIN_POLICY_HOLD_SECONDS,
+        }),
+      ]),
+    );
+    const maximumResult = shutdownPolicySchema.safeParse(
+      makeConfig([
+        makeRule({
+          action: { type: 'showWarning' },
+          holdForSeconds: MAX_POLICY_HOLD_SECONDS,
+        }),
+      ]),
+    );
+
+    expect(minimumResult.success).toBe(true);
+    expect(maximumResult.success).toBe(true);
+  });
+
   it('rejects condition nesting beyond the configured maximum', () => {
     const config = makeConfig([
       {
@@ -179,6 +231,54 @@ describe('shutdownPolicySchema', () => {
     expect(result.success).toBe(true);
   });
 
+  it('treats FSD triggers nested in any and not groups as FSD rules', () => {
+    const anyWrappedFsd = makeConfig([
+      {
+        ...makeRule({
+          priority: 1000,
+          severity: 'forced',
+          trigger: {
+            any: [
+              { field: 'ups.fsd', op: 'eq', value: true },
+              { field: 'ups.onBattery', op: 'eq', value: true },
+            ],
+          },
+          action: {
+            type: 'startShutdownCountdown',
+            countdownSeconds: 30,
+            method: 'shutdown',
+          },
+        }),
+        holdForSeconds: 0,
+        cancelWhen: null,
+      },
+    ]);
+    const negatedFsd = makeConfig([
+      {
+        ...makeRule({
+          priority: 1000,
+          severity: 'forced',
+          trigger: {
+            all: [
+              { field: 'ups.onBattery', op: 'eq', value: true },
+              { not: { field: 'ups.fsd', op: 'neq', value: true } },
+            ],
+          },
+          action: {
+            type: 'startShutdownCountdown',
+            countdownSeconds: 30,
+            method: 'shutdown',
+          },
+        }),
+        holdForSeconds: 0,
+        cancelWhen: null,
+      },
+    ]);
+
+    expect(shutdownPolicySchema.safeParse(anyWrappedFsd).success).toBe(true);
+    expect(shutdownPolicySchema.safeParse(negatedFsd).success).toBe(true);
+  });
+
   it('rejects duplicate rule ids', () => {
     const config = makeConfig([
       makeRule({ id: 'duplicate', action: { type: 'showWarning' } }),
@@ -187,6 +287,91 @@ describe('shutdownPolicySchema', () => {
 
     const result = shutdownPolicySchema.safeParse(config);
     expect(result.success).toBe(false);
+  });
+
+  it('rejects policies with more than the maximum number of rules', () => {
+    const tooManyRules = Array.from(
+      { length: MAX_SHUTDOWN_POLICY_RULES + 1 },
+      (_, index) => makeRule({
+        id: `rule-${index + 1}`,
+        name: `Rule ${index + 1}`,
+        action: { type: 'showWarning' },
+      }),
+    );
+
+    const result = shutdownPolicySchema.safeParse(makeConfig(tooManyRules));
+    expect(result.success).toBe(false);
+  });
+
+  it('rejects condition groups with more than the maximum number of conditions', () => {
+    const config = makeConfig([
+      makeRule({
+        action: { type: 'showWarning' },
+        trigger: {
+          all: Array.from(
+            { length: MAX_POLICY_CONDITIONS_PER_GROUP + 1 },
+            (_, index) => makeLeafCondition(index),
+          ),
+        },
+      }),
+    ]);
+
+    const result = shutdownPolicySchema.safeParse(config);
+    expect(result.success).toBe(false);
+  });
+
+  // L2-F1 (Phase 0) — schema-level defense in depth: user-authored rules whose
+  // action emits cancelShutdownCountdown can otherwise silently abort an active
+  // FSD shutdown via BatterySafetyService.cancelPolicyCountdown.
+  it('rejects user-created cancelShutdownCountdown rules when allowFsdAutoCancel is false', () => {
+    const config = makeConfig([
+      makeRule({
+        id: 'user-cancel-on-online',
+        action: { type: 'cancelShutdownCountdown' },
+        cancelWhen: undefined,
+        trigger: { field: 'ups.online', op: 'eq', value: true },
+      }),
+    ]);
+
+    const result = shutdownPolicySchema.safeParse(config);
+    expect(result.success).toBe(false);
+  });
+
+  it('allows user-created cancelShutdownCountdown rules when allowFsdAutoCancel is true', () => {
+    const config = makeConfig(
+      [
+        makeRule({
+          id: 'user-cancel-on-online',
+          action: { type: 'cancelShutdownCountdown' },
+          cancelWhen: undefined,
+          trigger: { field: 'ups.online', op: 'eq', value: true },
+        }),
+      ],
+      {
+        safety: {
+          ...defaultShutdownPolicyConfig.safety,
+          allowFsdAutoCancel: true,
+        },
+      },
+    );
+
+    const result = shutdownPolicySchema.safeParse(config);
+    expect(result.success).toBe(true);
+  });
+
+  it('allows system-created cancelShutdownCountdown rules regardless of allowFsdAutoCancel', () => {
+    const config = makeConfig([
+      makeRule({
+        id: 'system-cancel-on-online',
+        action: { type: 'cancelShutdownCountdown' },
+        cancelWhen: undefined,
+        trigger: { field: 'ups.online', op: 'eq', value: true },
+        createdBy: 'system',
+      }),
+    ]);
+
+    const result = shutdownPolicySchema.safeParse(config);
+    expect(result.success).toBe(true);
   });
 });
 
@@ -224,5 +409,13 @@ function makeRule(
     cancelWhen: null,
     createdBy: 'user',
     ...overrides,
+  };
+}
+
+function makeLeafCondition(index = 0): PolicyCondition {
+  return {
+    field: 'battery.chargePercent',
+    op: 'lte',
+    value: 50 - index,
   };
 }

@@ -281,6 +281,7 @@
         "shutdownPolicyMode": "策略模式",
         "shutdownPolicySimple": "简单推荐策略",
         "shutdownPolicyAdvanced": "高级自定义策略",
+        "shutdownPolicyAdvancedWarning": "切换到高级模式后会保留当前生成的简单模式规则，并允许你直接编辑它们。",
         "policyCommunicationLossEnable": "在电池供电期间通信丢失时关机",
         "policyCommunicationLossAfter": "通信丢失时间（秒）",
         "policyCountdownSeconds": "倒计时（秒）",

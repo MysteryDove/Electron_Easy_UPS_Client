@@ -130,6 +130,27 @@ function validateRuleSafety(
 ): void {
   const action = rule.action;
 
+  // SAFETY: A user-authored cancelShutdownCountdown rule with a non-FSD trigger
+  // can otherwise reach BatterySafetyService.cancelPolicyCountdown while an FSD
+  // countdown is active and silently abort the queued OS-level FSD shutdown
+  // (L2-F1 from .omc/research/shutdown-policy-review-2026-05-14.md).
+  // System-created rules (e.g. the default battery rule's implicit cancel path
+  // is expressed via `cancelWhen` on the rule itself, not via a standalone
+  // `cancelShutdownCountdown` action, so they are not affected) are allowed
+  // for forward compatibility.
+  if (
+    action.type === 'cancelShutdownCountdown' &&
+    rule.createdBy !== 'system' &&
+    !config.safety.allowFsdAutoCancel
+  ) {
+    context.addIssue({
+      code: z.ZodIssueCode.custom,
+      path: ['rules', index, 'action'],
+      message:
+        'User-created cancelShutdownCountdown rules require shutdownPolicy.safety.allowFsdAutoCancel',
+    });
+  }
+
   if (action.type === 'startShutdownCountdown') {
     if (action.countdownSeconds > config.safety.maxCountdownSeconds) {
       context.addIssue({

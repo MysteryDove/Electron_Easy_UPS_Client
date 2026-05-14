@@ -22,12 +22,17 @@ changes.
 - UPS online with low battery shows no shutdown countdown by default.
 - UPS on battery with low battery starts the configured battery countdown.
 - Power restoration cancels the normal battery countdown.
-- `OL FSD` starts and preserves the FSD countdown.
+- `OL FSD` starts and preserves the FSD countdown, including after a settings save.
 - Dismissing the FSD overlay follows the explicit FSD dismiss behavior.
 - Runtime remaining template triggers only while on battery.
 - Communication loss while online does not shut down by default.
 - Communication loss after previously-on-battery state triggers only when the
   fail-safe rule is enabled.
+- Advanced mode rejects `cancelShutdownCountdown` rules unless Allow FSD
+  auto-cancel is enabled.
+- Upgrading from a pre-policy build applies the documented immediate-shutdown
+  disclosure and the Allow immediate shutdown setting matches the migrated
+  legacy behavior.
 - The simulator explains both matched and unmatched rules.
 - Decision history records warning, countdown, cancellation, execution, and
   failure entries.
