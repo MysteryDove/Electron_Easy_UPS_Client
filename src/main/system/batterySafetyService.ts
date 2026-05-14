@@ -122,13 +122,7 @@ export class BatterySafetyService {
     const hadCancellableCountdown =
       this.activeCountdownRuleId !== null && !this.fsdShutdownCommitted;
 
-    // PRESERVE FSD STATE across config swaps. Previously this method reset
-    // `activeCountdownRuleId` and `appliedRuleIds` unconditionally, leaving an
-    // active FSD overlay visible while the engine and service forgot which rule
-    // owned the countdown. That widened the L2-F1 attack surface: after a config
-    // save, even the (post-fix) FSD guard could not associate a future cancel
-    // decision with the still-armed FSD. Capture state before the swap so we can
-    // restore it for the FSD-committed case.
+    // FSD state must survive config swaps to keep the irrevocability guard armed.
     const fsdWasCommitted = this.fsdShutdownCommitted;
     const fsdCountdownRuleId =
       fsdWasCommitted && this.activeCountdownRuleId !== null
@@ -401,13 +395,7 @@ export class BatterySafetyService {
   private cancelPolicyCountdown(
     decision: Extract<ShutdownPolicyDecision, { type: 'cancelShutdownCountdown' }>,
   ): void {
-    // SAFETY INVARIANT: FSD shutdowns are non-cancellable through the policy engine.
-    // Previously this guard checked `ruleId === DEFAULT_FSD_SHUTDOWN_RULE_ID`, which
-    // let a user-authored rule whose `action.type === 'cancelShutdownCountdown'`
-    // (with any ruleId) call `cancelPendingShutdown()` — silently aborting the queued
-    // OS-level FSD shutdown while the overlay still ticked down. Violates §8.3 of
-    // shutdown_policy_implementation_plan.md and Definition-of-Done #5.
-    // Fix: any committed FSD shutdown is sticky, regardless of the cancelling rule.
+    // FSD shutdown is irrevocable: any committed FSD blocks all cancel decisions.
     if (this.fsdShutdownCommitted) {
       return;
     }
@@ -841,47 +829,6 @@ function formatExecutionSummary(result: ShutdownExecutionResult): string {
     : result.message ?? 'Shutdown command failed.';
 }
 
-/**
- * @deprecated Runtime policy parsing lives in ShutdownPolicyContextBuilder.
- * This export remains for compatibility with older regression tests.
- */
-export function containsFsdToken(rawUpsStatus: string | undefined | null): boolean {
-  if (!rawUpsStatus) {
-    return false;
-  }
-
-  return rawUpsStatus
-    .split(/\s+/u)
-    .some((token) => token.toUpperCase() === 'FSD');
-}
-
-/**
- * @deprecated Runtime policy parsing lives in ShutdownPolicyContextBuilder.
- * This export remains for compatibility with older regression tests.
- */
-export function containsObToken(rawUpsStatus: string | undefined | null): boolean {
-  if (!rawUpsStatus) {
-    return false;
-  }
-
-  return rawUpsStatus
-    .split(/\s+/u)
-    .some((token) => token.toUpperCase() === 'OB');
-}
-
-/**
- * @deprecated Runtime policy parsing lives in ShutdownPolicyContextBuilder.
- * This export remains for compatibility with older regression tests.
- */
-export function containsLbToken(rawUpsStatus: string | undefined | null): boolean {
-  if (!rawUpsStatus) {
-    return false;
-  }
-
-  return rawUpsStatus
-    .split(/\s+/u)
-    .some((token) => token.toUpperCase() === 'LB');
-}
 
 function resolvePolicyConfig(config: AppConfig): ShutdownPolicyConfig {
   const maybeConfig = config as Partial<AppConfig>;
