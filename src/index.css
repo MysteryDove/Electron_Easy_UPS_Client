@@ -22,6 +22,7 @@
   --color-error: #ef4444;
   --color-error-glow: rgba(239, 68, 68, 0.12);
   --color-warning: #f59e0b;
+  --color-info: #3b82f6;
 
   --sidebar-width: 260px;
   --radius: 12px;
@@ -57,6 +58,7 @@
   --color-error: #ef4444;
   --color-error-glow: rgba(239, 68, 68, 0.25);
   --color-warning: #f59e0b;
+  --color-info: #60a5fa;
   --shadow-card: 0 4px 12px rgba(0, 0, 0, 0.2);
 }
 
@@ -327,6 +329,7 @@ body,
 .ups-status-badge {
   display: inline-flex;
   align-items: center;
+  flex-wrap: wrap;
   gap: 10px;
   padding: 10px 20px;
   border-radius: var(--radius-sm);
@@ -341,22 +344,73 @@ body,
   align-items: center;
 }
 
-.ups-status-badge--online {
+.ups-status-badge-label {
+  display: inline-flex;
+  align-items: center;
+}
+
+.ups-status-badge--ok {
   background: rgba(16, 163, 127, 0.12);
   color: var(--color-success);
   border-color: rgba(16, 163, 127, 0.3);
 }
 
-.ups-status-badge--battery {
+.ups-status-badge--info {
+  background: rgba(59, 130, 246, 0.12);
+  color: var(--color-info);
+  border-color: rgba(59, 130, 246, 0.3);
+}
+
+.ups-status-badge--warn {
   background: rgba(245, 158, 11, 0.12);
   color: var(--color-warning);
   border-color: rgba(245, 158, 11, 0.3);
 }
 
-.ups-status-badge--unknown {
+.ups-status-badge--critical {
+  background: rgba(239, 68, 68, 0.12);
+  color: var(--color-error);
+  border-color: rgba(239, 68, 68, 0.3);
+}
+
+.ups-status-badge--neutral {
   background: rgba(142, 142, 160, 0.12);
   color: var(--color-text-dim);
   border-color: rgba(142, 142, 160, 0.3);
+}
+
+@media (prefers-reduced-motion: no-preference) {
+  @keyframes ups-status-badge-pulse {
+    0%, 100% {
+      box-shadow: 0 0 0 0 rgba(239, 68, 68, 0.45);
+    }
+    50% {
+      box-shadow: 0 0 0 8px rgba(239, 68, 68, 0);
+    }
+  }
+
+  .ups-status-badge--critical.ups-status-badge--pulse {
+    animation: ups-status-badge-pulse 1.4s ease-in-out 0s 3;
+  }
+}
+
+.ups-status-modifier-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  padding: 2px 8px;
+  border-radius: 999px;
+  font-size: 0.78rem;
+  font-weight: 500;
+  background: rgba(142, 142, 160, 0.12);
+  color: var(--color-text-muted);
+  border: 1px solid rgba(142, 142, 160, 0.3);
+}
+
+.ups-status-modifier-chip--stale {
+  background: rgba(245, 158, 11, 0.12);
+  color: var(--color-warning);
+  border-color: rgba(245, 158, 11, 0.3);
 }
 
 /* ===================================================================

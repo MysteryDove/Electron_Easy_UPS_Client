@@ -3,9 +3,7 @@ import { Disclosure, Transition } from '@headlessui/react';
 import {
   Activity,
   Battery,
-  BatteryWarning,
   ChevronDown,
-  Plug,
   Zap,
 } from 'lucide-react';
 import type { TFunction } from 'i18next';
@@ -17,6 +15,11 @@ import type {
   TelemetryDataPoint,
 } from '../../shared/ipc/contracts';
 import { SparklineCard } from '../components/SparklineCard';
+import { UpsStatusBanner } from '../components/UpsStatusBanner';
+import {
+  deriveUpsBannerState,
+  parseUpsStatusTokens,
+} from '../../shared/upsStatus/statusModel';
 
 const HISTORY_LIMIT = 50;
 
@@ -57,38 +60,54 @@ const NUT_DETAILS_GROUP_ORDER: NutDetailsGroupKey[] = [
   'other',
 ];
 
-function getStatusInfo(
-  statusNum: number | null | undefined,
-  t: TFunction,
-): { label: string; className: string; icon: React.ReactNode } {
-  if (statusNum === 1) {
-    return {
-      label: t('dashboard.statusOnline'),
-      className: 'ups-status-badge--online',
-      icon: <Plug size={18} />,
-    };
-  }
+function useElapsedSince(timestamp: string | undefined | null): number {
+  const [elapsed, setElapsed] = useState<number>(() =>
+    timestamp ? Math.max(0, (Date.now() - Date.parse(timestamp)) / 1000) : 0,
+  );
 
-  if (statusNum === 0) {
-    return {
-      label: t('dashboard.statusBattery'),
-      className: 'ups-status-badge--battery',
-      icon: <BatteryWarning size={18} />,
-    };
-  }
+  useEffect(() => {
+    if (!timestamp) {
+      setElapsed(0);
+      return undefined;
+    }
+    const startMs = Date.parse(timestamp);
+    setElapsed(Math.max(0, (Date.now() - startMs) / 1000));
+    const interval = setInterval(() => {
+      setElapsed(Math.max(0, (Date.now() - startMs) / 1000));
+    }, 1000);
+    return () => clearInterval(interval);
+  }, [timestamp]);
 
-  return {
-    label: t('dashboard.statusUnknown'),
-    className: 'ups-status-badge--unknown',
-    icon: <Activity size={18} />,
-  };
+  return elapsed;
 }
 
 export function DashboardPage() {
   const { t } = useTranslation();
-  const { staticData, dynamicData, lastTelemetry } = useConnection();
+  const {
+    state: connectionState,
+    staticData,
+    dynamicData,
+    lastTelemetry,
+    localDriverLaunchIssue,
+  } = useConnection();
   const { config } = useAppConfig();
   const [history, setHistory] = useState<TelemetryDataPoint[]>([]);
+
+  const bannerTokens = useMemo(
+    () => parseUpsStatusTokens(dynamicData?.['ups.status']),
+    [dynamicData],
+  );
+  const bannerAlarmText = dynamicData?.['ups.alarm'];
+  const legacyStatusNumValue = lastTelemetry?.values.ups_status_num;
+  const bannerStaleSeconds = useElapsedSince(lastTelemetry?.ts);
+  const bannerState = deriveUpsBannerState({
+    tokens: bannerTokens,
+    legacyStatusNum:
+      typeof legacyStatusNumValue === 'number' ? legacyStatusNumValue : null,
+    connection: connectionState,
+    staleSeconds: bannerStaleSeconds,
+    driverIssue: localDriverLaunchIssue,
+  });
 
   const batteryMetrics: MetricKey[] = [
     {
@@ -378,26 +397,19 @@ export function DashboardPage() {
         )}
       </header>
 
+      <UpsStatusBanner
+        primary={bannerState.primary}
+        modifiers={bannerState.modifiers}
+        severity={bannerState.severity}
+        rawTokens={bannerTokens}
+        alarmText={bannerAlarmText}
+      />
+
       {!lastTelemetry && (
         <div className="page-loading">
           <span className="page-subtitle">{t('dashboard.waitingTelemetry')}</span>
         </div>
       )}
-
-      {lastTelemetry && (() => {
-        const statusVal = lastTelemetry.values.ups_status_num as
-          | number
-          | null
-          | undefined;
-        const info = getStatusInfo(statusVal, t);
-
-        return (
-          <div className={`ups-status-badge ${info.className}`}>
-            <span className="ups-status-badge-icon">{info.icon}</span>
-            <span className="ups-status-badge-label">{info.label}</span>
-          </div>
-        );
-      })()}
 
       <section className="dashboard-metrics">
         {renderGroup(t('dashboard.groupBattery'), batteryMetrics)}

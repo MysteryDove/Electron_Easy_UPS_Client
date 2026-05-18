@@ -6,8 +6,12 @@ import type {
   ShutdownPolicyConnectionState,
   ShutdownPolicyContext,
 } from '../../shared/shutdownPolicy/types';
+import {
+  DEFAULT_STATUS_STALE_GRACE_SECONDS,
+  parseUpsStatusTokens,
+} from '../../shared/upsStatus/statusModel';
 
-const DEFAULT_STATUS_STALE_GRACE_SECONDS = 15;
+export { parseUpsStatusTokens };
 
 export type ShutdownPolicyContextBuilderOptions = {
   statusStaleGraceSeconds?: number;
@@ -170,24 +174,6 @@ export class ShutdownPolicyContextBuilder {
       state,
     };
   }
-}
-
-export function parseUpsStatusTokens(rawUpsStatus: string | null | undefined): string[] {
-  if (!rawUpsStatus) {
-    return [];
-  }
-
-  const seen = new Set<string>();
-  const tokens: string[] = [];
-  for (const token of rawUpsStatus.split(/\s+/u)) {
-    const normalized = token.trim().toUpperCase();
-    if (!normalized || seen.has(normalized)) {
-      continue;
-    }
-    seen.add(normalized);
-    tokens.push(normalized);
-  }
-  return tokens;
 }
 
 export function normalizeConnectionState(
