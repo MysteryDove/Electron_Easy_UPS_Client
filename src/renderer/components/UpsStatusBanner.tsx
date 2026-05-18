@@ -10,10 +10,10 @@ import {
   BatteryWarning,
   Loader,
   Plug,
-  PlugOff,
   Power,
   RefreshCw,
   Settings,
+  Unplug,
   ZapOff,
 } from 'lucide-react';
 import type {
@@ -41,7 +41,7 @@ const PRIMARY_ICON: Record<BannerPrimary, React.ReactNode> = {
   reconnecting: <RefreshCw size={18} />,
   initializing: <Loader size={18} />,
   connecting: <Loader size={18} />,
-  disconnected: <PlugOff size={18} />,
+  disconnected: <Unplug size={18} />,
 };
 
 const MODIFIER_ICON: Record<BannerModifier, React.ReactNode> = {
