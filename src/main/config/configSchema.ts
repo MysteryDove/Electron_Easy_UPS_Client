@@ -150,6 +150,7 @@ export const appConfigSchema = z
     wizard: wizardConfigSchema,
     line: lineConfigSchema,
     fsd: fsdConfigSchema,
+    selectedDashboardTemplate: z.string().trim().min(1),
     shutdownPolicy: shutdownPolicySchema,
   })
   .strict();
@@ -168,6 +169,7 @@ const appConfigPatchSchema = z
     wizard: wizardConfigSchema.partial().optional(),
     line: lineConfigSchema.partial().optional(),
     fsd: fsdConfigSchema.partial().optional(),
+    selectedDashboardTemplate: z.string().trim().min(1).optional(),
     shutdownPolicy: shutdownPolicyPatchSchema.optional(),
   })
   .strict();
@@ -253,6 +255,7 @@ export const defaultAppConfig: AppConfig = {
     alertCooldownMinutes: 5,
   },
   fsd: defaultFsdConfig,
+  selectedDashboardTemplate: 'default',
   shutdownPolicy: migrateLegacyShutdownPolicyConfig({
     battery: defaultBatteryConfig,
     fsd: defaultFsdConfig,
@@ -299,6 +302,8 @@ export function applyConfigPatch(
       : current.wizard,
     line: patch.line ? { ...current.line, ...patch.line } : current.line,
     fsd: patch.fsd ? { ...current.fsd, ...patch.fsd } : current.fsd,
+    selectedDashboardTemplate:
+      patch.selectedDashboardTemplate ?? current.selectedDashboardTemplate,
     shutdownPolicy: patch.shutdownPolicy
       ? {
         ...current.shutdownPolicy,

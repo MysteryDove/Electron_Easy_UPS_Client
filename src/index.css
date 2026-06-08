@@ -955,6 +955,16 @@ body,
 }
 
 @media (max-width: 760px) {
+  .dashboard-template-selector {
+    align-self: stretch;
+    max-width: none;
+  }
+
+  .dashboard-template-selector-input {
+    min-width: 0;
+    width: 100%;
+  }
+
   .wizard-folder-row {
     grid-template-columns: 1fr;
   }
@@ -1369,6 +1379,68 @@ body,
    Dashboard page
    =================================================================== */
 
+.dashboard-template-page {
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+}
+
+.dashboard-template-shell {
+  animation: dashboard-template-fade 180ms ease;
+}
+
+.dashboard-template-selector {
+  align-self: flex-end;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  max-width: 360px;
+}
+
+.dashboard-template-selector-label {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.dashboard-template-selector-title {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  color: var(--color-text-muted);
+  font-size: 0.82rem;
+  font-weight: 600;
+}
+
+.dashboard-template-selector-input {
+  min-width: 240px;
+  padding: 10px 12px;
+  border-radius: var(--radius-sm);
+  border: 1px solid var(--color-border);
+  background: var(--color-bg-input);
+  color: var(--color-text);
+  font-size: 0.92rem;
+  transition: border-color var(--transition), box-shadow var(--transition);
+}
+
+.dashboard-template-selector-input:focus {
+  outline: none;
+  border-color: var(--color-primary);
+  box-shadow: 0 0 0 3px var(--color-primary-glow);
+}
+
+.dashboard-template-selector-input:disabled {
+  opacity: 0.7;
+  cursor: not-allowed;
+}
+
+.dashboard-template-selector-description {
+  margin: 0;
+  color: var(--color-text-muted);
+  font-size: 0.82rem;
+  line-height: 1.5;
+}
+
 .dashboard-page {
   display: flex;
   flex-direction: column;
@@ -1507,6 +1579,18 @@ body,
 
 .dashboard-static-chevron--open {
   transform: rotate(180deg);
+}
+
+@keyframes dashboard-template-fade {
+  from {
+    opacity: 0;
+    transform: translateY(6px);
+  }
+
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
 }
 
 .disclosure-motion {

@@ -63,6 +63,7 @@
         "modifierOverload": "Overload",
         "modifierBypass": "Bypass",
         "modifierStale": "Stale data",
+        "templateSelectorLabel": "Dashboard template",
         "groupBattery": "Battery",
         "groupInput": "Input",
         "groupOutput": "Output",

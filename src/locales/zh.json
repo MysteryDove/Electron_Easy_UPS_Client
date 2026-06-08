@@ -74,7 +74,8 @@
         "modifierHighBattery": "电池电量高",
         "modifierOverload": "过载",
         "modifierBypass": "旁路",
-        "modifierStale": "数据失效"
+        "modifierStale": "数据失效",
+        "templateSelectorLabel": "仪表板模板"
     },
     "telemetry": {
         "title": "数据中心",
