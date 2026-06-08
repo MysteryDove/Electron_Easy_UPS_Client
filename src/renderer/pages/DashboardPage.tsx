@@ -42,8 +42,8 @@ export function DashboardPage() {
     <DashboardDataProvider>
       <div className="dashboard-template-page">
         <TemplateSelector activeTemplateId={activeTemplate.metadata.id} />
-        <TemplateErrorBoundary>
-          <div key={activeTemplate.metadata.id} className="dashboard-template-shell">
+        <TemplateErrorBoundary key={activeTemplate.metadata.id}>
+          <div className="dashboard-template-shell">
             <ActiveTemplate />
           </div>
         </TemplateErrorBoundary>
