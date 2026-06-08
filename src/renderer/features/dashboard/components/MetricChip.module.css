@@ -1,0 +1,15 @@
+.chip {
+  display: inline-flex;
+  align-items: center;
+  padding: 3px 7px;
+  border: 1px solid var(--color-border, oklch(90% 0.008 250));
+  border-radius: 999px;
+  color: var(--color-muted, oklch(52% 0.018 250));
+  font-size: 11px;
+  white-space: nowrap;
+  background: transparent;
+}
+
+.chip:hover {
+  background: color-mix(in oklch, var(--color-border, oklch(90% 0.008 250)) 30%, transparent);
+}

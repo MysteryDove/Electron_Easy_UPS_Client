@@ -1,0 +1,44 @@
+.template {
+  min-height: 604px;
+  display: grid;
+  place-items: center;
+  text-align: center;
+}
+
+.value {
+  margin: 10px 0;
+  font-family: var(--font-mono, 'JetBrains Mono', 'SFMono-Regular', Consolas, ui-monospace, monospace);
+  font-size: clamp(92px, 12vw, 148px);
+  line-height: 0.9;
+  font-weight: 820;
+  font-variant-numeric: tabular-nums;
+  letter-spacing: -0.06em;
+}
+
+.unit {
+  margin-left: 4px;
+  color: var(--color-muted, oklch(52% 0.018 250));
+  font-size: 0.3em;
+}
+
+.title {
+  font-family: var(--font-display, 'Segoe UI', -apple-system, sans-serif);
+  font-size: 24px;
+  line-height: 1.12;
+  letter-spacing: -0.02em;
+  margin: 0;
+}
+
+.description {
+  margin: 12px auto 0;
+  max-width: 46ch;
+  color: var(--color-muted, oklch(52% 0.018 250));
+}
+
+.chips {
+  display: flex;
+  justify-content: center;
+  gap: 6px;
+  flex-wrap: wrap;
+  margin-top: 22px;
+}
