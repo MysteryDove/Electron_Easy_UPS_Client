@@ -1,5 +1,6 @@
 import { useEffect } from 'react';
 import { useAppConfig } from '../app/providers';
+import { TemplateErrorBoundary } from '../components/TemplateErrorBoundary';
 import '../features/dashboard/templates';
 import {
   DashboardDataProvider,
@@ -41,9 +42,11 @@ export function DashboardPage() {
     <DashboardDataProvider>
       <div className="dashboard-template-page">
         <TemplateSelector activeTemplateId={activeTemplate.metadata.id} />
-        <div key={activeTemplate.metadata.id} className="dashboard-template-shell">
-          <ActiveTemplate />
-        </div>
+        <TemplateErrorBoundary>
+          <div key={activeTemplate.metadata.id} className="dashboard-template-shell">
+            <ActiveTemplate />
+          </div>
+        </TemplateErrorBoundary>
       </div>
     </DashboardDataProvider>
   );

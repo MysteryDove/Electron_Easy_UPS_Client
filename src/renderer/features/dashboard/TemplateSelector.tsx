@@ -40,6 +40,9 @@ export function TemplateSelector({ activeTemplateId }: TemplateSelectorProps) {
       await refreshConfig();
     } catch (error) {
       console.error('Failed to update dashboard template selection', error);
+      // Reset select to previous value on error
+      event.target.value = activeTemplate.metadata.id;
+      // TODO: Show toast notification to user about the failure
     } finally {
       setIsSaving(false);
     }

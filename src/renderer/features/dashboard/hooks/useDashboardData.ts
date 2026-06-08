@@ -102,26 +102,33 @@ export function useDashboardData(): DashboardData | null {
     );
   }, [lastTelemetry]);
 
+  // Update staleness check based on configured polling interval
+  // Dependency stabilized to avoid recreating interval on every telemetry update
   useEffect(() => {
-    if (!lastTelemetry?.ts) {
+    if (!lastTelemetry?.ts || !config) {
       setNowMs(Date.now());
       return undefined;
     }
 
+    // Set immediately on telemetry change
+    setNowMs(Date.now());
+
+    // Then update at the same rate as telemetry polling
     const interval = setInterval(() => {
       setNowMs(Date.now());
-    }, 1000);
+    }, config.polling.intervalMs);
 
     return () => {
       clearInterval(interval);
     };
-  }, [lastTelemetry?.ts]);
+  }, [!!lastTelemetry?.ts, config?.polling.intervalMs]);
 
   const lastUpdateTime = useMemo(
     () => (lastTelemetry?.ts ? new Date(lastTelemetry.ts) : null),
     [lastTelemetry?.ts],
   );
 
+  // Note: onUpdate omitted from deps - it's memoized with empty array and never changes
   return useMemo<DashboardData | null>(() => {
     if (!config) {
       return null;
@@ -155,7 +162,6 @@ export function useDashboardData(): DashboardData | null {
     lastUpdateTime,
     localDriverLaunchIssue,
     nowMs,
-    onUpdate,
     state,
     staticData,
   ]);
