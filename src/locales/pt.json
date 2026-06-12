@@ -74,7 +74,8 @@
         "modifierHighBattery": "Bateria alta",
         "modifierOverload": "Sobrecarga",
         "modifierBypass": "Bypass",
-        "modifierStale": "Dados desatualizados"
+        "modifierStale": "Dados desatualizados",
+        "templateSelectorLabel": "Modelo do painel"
     },
     "telemetry": {
         "title": "Histórico de telemetria",

@@ -74,7 +74,8 @@
         "modifierHighBattery": "Ắc quy đầy",
         "modifierOverload": "Quá tải",
         "modifierBypass": "Bypass",
-        "modifierStale": "Dữ liệu cũ"
+        "modifierStale": "Dữ liệu cũ",
+        "templateSelectorLabel": "Mẫu bảng điều khiển"
     },
     "telemetry": {
         "title": "Lịch sử dữ liệu từ xa",

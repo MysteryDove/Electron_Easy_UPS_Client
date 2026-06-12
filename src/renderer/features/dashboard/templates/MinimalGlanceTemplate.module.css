@@ -5,7 +5,38 @@
   text-align: center;
 }
 
-.value {
+.centered {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 12px;
+}
+
+.statusPill {
+  padding: 6px 14px;
+  border-radius: 20px;
+  font-size: 13px;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.03em;
+}
+
+.statusPill[data-status="normal"] {
+  background: oklch(92% 0.08 142);
+  color: oklch(38% 0.12 142);
+}
+
+.statusPill[data-status="warning"] {
+  background: oklch(92% 0.12 85);
+  color: oklch(45% 0.18 85);
+}
+
+.statusPill[data-status="critical"] {
+  background: oklch(92% 0.12 25);
+  color: oklch(55% 0.22 25);
+}
+
+.largeValue {
   margin: 10px 0;
   font-family: var(--font-mono, 'JetBrains Mono', 'SFMono-Regular', Consolas, ui-monospace, monospace);
   font-size: clamp(92px, 12vw, 148px);
@@ -15,13 +46,7 @@
   letter-spacing: -0.06em;
 }
 
-.unit {
-  margin-left: 4px;
-  color: var(--color-muted, oklch(52% 0.018 250));
-  font-size: 0.3em;
-}
-
-.title {
+.healthHeading {
   font-family: var(--font-display, 'Segoe UI', -apple-system, sans-serif);
   font-size: 24px;
   line-height: 1.12;

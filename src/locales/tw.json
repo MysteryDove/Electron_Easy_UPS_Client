@@ -74,7 +74,8 @@
         "modifierHighBattery": "電池電量高",
         "modifierOverload": "過載",
         "modifierBypass": "旁路",
-        "modifierStale": "資料失效"
+        "modifierStale": "資料失效",
+        "templateSelectorLabel": "儀表板模板"
     },
     "telemetry": {
         "title": "資料中心",

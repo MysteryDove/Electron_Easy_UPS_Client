@@ -235,6 +235,12 @@ body,
   text-align: center;
 }
 
+.sidebar-template-selector {
+  padding: 16px 16px 12px;
+  border-top: 1px solid var(--color-border);
+  margin-top: auto;
+}
+
 .sidebar-footer {
   padding: 14px 16px 0;
   border-top: 1px solid var(--color-border);

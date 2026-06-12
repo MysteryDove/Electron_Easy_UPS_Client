@@ -67,13 +67,13 @@ export function TemplateSelector({ activeTemplateId }: TemplateSelectorProps) {
         >
           {templates.map((template) => (
             <option key={template.metadata.id} value={template.metadata.id}>
-              {template.metadata.name}
+              {t(template.metadata.name)}
             </option>
           ))}
         </UiSelect>
       </label>
       <p className="dashboard-template-selector-description">
-        {activeTemplate.metadata.description}
+        {t(activeTemplate.metadata.description)}
       </p>
     </div>
   );

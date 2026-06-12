@@ -96,3 +96,9 @@ lint.json
 lint_output.txt
 lint_results.txt
 .tmp_duckdb_lock_test/
+
+# Claude Code local settings
+.claude/settings.local.json
+
+.od/
+.od-skills/

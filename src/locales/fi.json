@@ -74,7 +74,8 @@
         "modifierHighBattery": "Akku täynnä",
         "modifierOverload": "Ylikuorma",
         "modifierBypass": "Ohitus",
-        "modifierStale": "Vanhentunut data"
+        "modifierStale": "Vanhentunut data",
+        "templateSelectorLabel": "Koontinäyttömalli"
     },
     "telemetry": {
         "title": "Telemetriahistoria",

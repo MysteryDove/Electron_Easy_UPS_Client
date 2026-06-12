@@ -74,7 +74,8 @@
         "modifierHighBattery": "Baterai Penuh",
         "modifierOverload": "Beban Lebih",
         "modifierBypass": "Bypass",
-        "modifierStale": "Data basi"
+        "modifierStale": "Data basi",
+        "templateSelectorLabel": "Template dasbor"
     },
     "telemetry": {
         "title": "Riwayat Telemetri",

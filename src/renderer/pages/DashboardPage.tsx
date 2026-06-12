@@ -4,7 +4,6 @@ import { TemplateErrorBoundary } from '../components/TemplateErrorBoundary';
 import '../features/dashboard/templates';
 import {
   DashboardDataProvider,
-  TemplateSelector,
   templateRegistry,
 } from '../features/dashboard';
 
@@ -41,7 +40,6 @@ export function DashboardPage() {
   return (
     <DashboardDataProvider>
       <div className="dashboard-template-page">
-        <TemplateSelector activeTemplateId={activeTemplate.metadata.id} />
         <TemplateErrorBoundary key={activeTemplate.metadata.id}>
           <div className="dashboard-template-shell">
             <ActiveTemplate />
