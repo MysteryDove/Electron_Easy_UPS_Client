@@ -90,9 +90,16 @@ export function useDashboardData(): DashboardData | null {
       return;
     }
 
-    listenersRef.current.forEach((callback) => {
-      callback(lastTelemetry.values);
-    });
+    for (const callback of listenersRef.current) {
+      try {
+        callback(lastTelemetry.values);
+      } catch (error) {
+        console.error(
+          '[useDashboardData] telemetry update listener failed',
+          error,
+        );
+      }
+    }
 
     setHistory((previousHistory) =>
       mergeTelemetryPoint(previousHistory, {
