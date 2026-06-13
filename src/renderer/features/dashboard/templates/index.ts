@@ -1,6 +1,5 @@
 import { registerTemplate } from '../index';
 import { DefaultTemplate } from './DefaultTemplate';
-import { CompactCommandTemplate } from './CompactCommandTemplate';
 import { CardOverviewTemplate } from './CardOverviewTemplate';
 import { PowerQualityTemplate } from './PowerQualityTemplate';
 import { BatteryFocusTemplate } from './BatteryFocusTemplate';
@@ -15,16 +14,6 @@ registerTemplate(
     description: 'dashboard.templateDefaultDesc',
   },
   DefaultTemplate,
-);
-
-// Register CompactCommand template
-registerTemplate(
-  {
-    id: 'compact-command',
-    name: 'dashboard.templateCompactCommand',
-    description: 'dashboard.templateCompactCommandDesc',
-  },
-  CompactCommandTemplate,
 );
 
 // Register CardOverview template

@@ -3,6 +3,7 @@
   display: grid;
   place-items: center;
   text-align: center;
+  min-width: 0;
 }
 
 .centered {
@@ -10,6 +11,8 @@
   flex-direction: column;
   align-items: center;
   gap: 12px;
+  width: min(100%, 40rem);
+  min-width: 0;
 }
 
 .statusPill {
@@ -58,6 +61,7 @@
   margin: 12px auto 0;
   max-width: 46ch;
   color: var(--color-muted, oklch(52% 0.018 250));
+  overflow-wrap: anywhere;
 }
 
 .chips {
@@ -66,4 +70,34 @@
   gap: 6px;
   flex-wrap: wrap;
   margin-top: 22px;
+  max-width: 100%;
+}
+
+@media (max-width: 560px) {
+  .template {
+    min-height: 0;
+    padding: 24px 0;
+  }
+
+  .centered {
+    width: 100%;
+  }
+
+  .largeValue {
+    font-size: clamp(72px, 24vw, 108px);
+  }
+
+  .description {
+    max-width: 32ch;
+  }
+}
+
+@media (max-width: 380px) {
+  .largeValue {
+    font-size: clamp(58px, 22vw, 84px);
+  }
+
+  .chips {
+    justify-content: stretch;
+  }
 }

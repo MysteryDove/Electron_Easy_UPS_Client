@@ -350,6 +350,9 @@ export function normalizeStoredConfig(payload: unknown): AppConfig {
   } catch {
     return defaultAppConfig;
   }
+
+  normalized = normalizeDashboardTemplateSelection(normalized);
+
   if (hasShutdownPolicy(payload)) {
     return normalized;
   }
@@ -369,4 +372,15 @@ function hasShutdownPolicy(payload: unknown): boolean {
     typeof payload === 'object' &&
     Object.prototype.hasOwnProperty.call(payload, 'shutdownPolicy')
   );
+}
+
+function normalizeDashboardTemplateSelection(config: AppConfig): AppConfig {
+  if (config.selectedDashboardTemplate !== 'compact-command') {
+    return config;
+  }
+
+  return {
+    ...config,
+    selectedDashboardTemplate: defaultAppConfig.selectedDashboardTemplate,
+  };
 }

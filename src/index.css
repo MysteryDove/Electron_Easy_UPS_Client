@@ -1396,10 +1396,12 @@ body,
 }
 
 .dashboard-template-selector {
-  align-self: flex-end;
+  align-self: stretch;
   display: flex;
   flex-direction: column;
   gap: 6px;
+  width: 100%;
+  min-width: 0;
   max-width: 360px;
 }
 
@@ -1407,6 +1409,7 @@ body,
   display: flex;
   flex-direction: column;
   gap: 8px;
+  min-width: 0;
 }
 
 .dashboard-template-selector-title {
@@ -1416,16 +1419,22 @@ body,
   color: var(--color-text-muted);
   font-size: 0.82rem;
   font-weight: 600;
+  min-width: 0;
 }
 
 .dashboard-template-selector-input {
-  min-width: 240px;
+  width: 100%;
+  min-width: 0;
+  max-width: 100%;
   padding: 10px 12px;
   border-radius: var(--radius-sm);
   border: 1px solid var(--color-border);
   background: var(--color-bg-input);
   color: var(--color-text);
   font-size: 0.92rem;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
   transition: border-color var(--transition), box-shadow var(--transition);
 }
 

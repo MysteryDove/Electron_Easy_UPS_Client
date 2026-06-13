@@ -210,4 +210,13 @@ describe('dashboard template config schema', () => {
 
     expect(result.selectedDashboardTemplate).toBe('default');
   });
+
+  it('normalizes removed dashboard template selections to default', () => {
+    const result = normalizeStoredConfig({
+      ...defaultAppConfig,
+      selectedDashboardTemplate: 'compact-command',
+    });
+
+    expect(result.selectedDashboardTemplate).toBe('default');
+  });
 });

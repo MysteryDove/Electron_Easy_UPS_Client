@@ -28,7 +28,8 @@
   font-size: 13px;
 }
 
-.bar {
+.bar,
+.barContainer {
   height: 8px;
   overflow: hidden;
   border-radius: 999px;
@@ -43,7 +44,8 @@
   transition: width 0.3s ease;
 }
 
-.secondary {
+.secondary,
+.note {
   color: var(--color-muted, oklch(52% 0.018 250));
   font-size: 13px;
 }
@@ -53,7 +55,9 @@
     grid-template-columns: 1fr auto;
   }
   .bar,
-  .secondary {
+  .barContainer,
+  .secondary,
+  .note {
     grid-column: 1 / -1;
   }
 }

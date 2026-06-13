@@ -66,8 +66,6 @@
         "templateSelectorLabel": "Dashboard template",
         "templateDefault": "Default",
         "templateDefaultDesc": "Classic dashboard with detailed metrics",
-        "templateCompactCommand": "Compact Command",
-        "templateCompactCommandDesc": "Dense two-column layout optimized for 1366px displays",
         "templateCardOverview": "Card Overview",
         "templateCardOverviewDesc": "Hero card with metric grid",
         "templatePowerQuality": "Power Quality",

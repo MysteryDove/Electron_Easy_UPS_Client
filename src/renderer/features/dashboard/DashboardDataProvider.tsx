@@ -1,4 +1,5 @@
 import { createContext, useContext } from 'react';
+import { useTranslation } from 'react-i18next';
 import { useDashboardData } from './hooks/useDashboardData';
 import type { DashboardData, DashboardDataProviderProps } from './types';
 
@@ -7,10 +8,17 @@ const DashboardDataContext = createContext<DashboardData | null>(null);
 export function DashboardDataProvider({
   children,
 }: DashboardDataProviderProps) {
+  const { t } = useTranslation();
   const data = useDashboardData();
 
   if (!data) {
-    return null;
+    return (
+      <div className="page-loading">
+        <span className="page-subtitle">
+          {t('dashboard.loading', 'Loading dashboard...')}
+        </span>
+      </div>
+    );
   }
 
   return (

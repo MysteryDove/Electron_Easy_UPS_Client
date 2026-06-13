@@ -17,7 +17,7 @@ export function HeroCard({
   className = '',
 }: HeroCardProps) {
   return (
-    <div className={`${styles.card} ${styles[status]} ${className}`}>
+    <div className={`${styles.card} ${className}`}>
       <div className={styles.header}>
         <h3 className={styles.title}>{title}</h3>
         <div className={styles.statusPill} data-status={status}>

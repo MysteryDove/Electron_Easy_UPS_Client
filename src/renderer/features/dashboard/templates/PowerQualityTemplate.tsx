@@ -40,11 +40,14 @@ export function PowerQualityTemplate() {
   const apparentPower = telemetry?.values.ups_apparent_power_va ?? 0;
   const realPower = telemetry?.values.ups_realpower_watts ?? 0;
 
-  // Nominal values (could come from config in future)
-  const nominalVoltage = 230;
-  const nominalFrequency = 50;
-  const voltageTolerance = 10; // ±10%
-  const frequencyTolerance = 2; // ±2%
+  const {
+    nominalVoltage,
+    nominalFrequency,
+    voltageTolerancePosPct,
+    voltageToleranceNegPct,
+    frequencyTolerancePosPct,
+    frequencyToleranceNegPct,
+  } = data.config.line;
 
   // Prepare sparkline data
   const inputCurrentHistory = history
@@ -77,37 +80,37 @@ export function PowerQualityTemplate() {
           value={inputVoltage}
           unit="V"
           nominalValue={nominalVoltage}
-          tolerancePosPct={voltageTolerance}
-          toleranceNegPct={voltageTolerance}
+          tolerancePosPct={voltageTolerancePosPct}
+          toleranceNegPct={voltageToleranceNegPct}
         />
         <QualityBandCard
           label={t('metrics.outputVoltage')}
           value={outputVoltage}
           unit="V"
           nominalValue={nominalVoltage}
-          tolerancePosPct={voltageTolerance}
-          toleranceNegPct={voltageTolerance}
+          tolerancePosPct={voltageTolerancePosPct}
+          toleranceNegPct={voltageToleranceNegPct}
         />
         <QualityBandCard
           label={t('metrics.inputFrequency')}
           value={inputFreq}
           unit="Hz"
           nominalValue={nominalFrequency}
-          tolerancePosPct={frequencyTolerance}
-          toleranceNegPct={frequencyTolerance}
+          tolerancePosPct={frequencyTolerancePosPct}
+          toleranceNegPct={frequencyToleranceNegPct}
         />
         <QualityBandCard
           label={t('metrics.outputFrequency')}
           value={outputFreq}
           unit="Hz"
           nominalValue={nominalFrequency}
-          tolerancePosPct={frequencyTolerance}
-          toleranceNegPct={frequencyTolerance}
+          tolerancePosPct={frequencyTolerancePosPct}
+          toleranceNegPct={frequencyToleranceNegPct}
         />
       </div>
 
       {/* Mini metrics grid (4 columns) */}
-      <div className={styles.metricsGrid}>
+      <div className={styles.miniGrid}>
         <SparklineCard
           title={t('metrics.inputCurrent')}
           currentValue={inputCurrent}

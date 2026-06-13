@@ -34,7 +34,7 @@ export class TemplateErrorBoundary extends Component<Props, State> {
             <pre style={{
               marginTop: '0.5rem',
               padding: '1rem',
-              background: 'var(--color-bg-secondary)',
+              background: 'var(--color-bg-card)',
               borderRadius: '4px',
               overflow: 'auto'
             }}>

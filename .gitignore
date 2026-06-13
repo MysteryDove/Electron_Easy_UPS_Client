@@ -99,6 +99,6 @@ lint_results.txt
 
 # Claude Code local settings
 .claude/settings.local.json
-AGENT.md
+AGENTS.md
 .od/
 .od-skills/

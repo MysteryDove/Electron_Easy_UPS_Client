@@ -85,7 +85,7 @@ registerTemplate(
 
 ### 3. Done!
 
-The template selector will automatically appear in the dashboard header once you have 2+ templates registered.
+The template selector will automatically appear in the dashboard sidebar when the dashboard page is active and the sidebar is expanded.
 
 ---
 
@@ -116,10 +116,12 @@ Your Template Component
 ### Component Hierarchy
 
 ```
-DashboardPage (Container)
-  └── DashboardDataProvider
-       ├── TemplateSelector
-       └── [Active Template Component]
+AppShell
+  ├── Sidebar (TemplateSelector shown on /dashboard when expanded)
+  └── DashboardPage (Container)
+    └── DashboardDataProvider
+      └── TemplateErrorBoundary
+        └── [Active Template Component]
 ```
 
 ### Key Principles
