@@ -186,3 +186,37 @@ describe('shutdown policy config schema', () => {
     expect(fsdRule?.action).toEqual({ type: 'showCriticalAlert' });
   });
 });
+
+describe('dashboard template config schema', () => {
+  it('defaults include the default dashboard template id', () => {
+    expect(defaultAppConfig.selectedDashboardTemplate).toBe('default');
+  });
+
+  it('applies a partial dashboard template selection patch', () => {
+    const patch = parseConfigPatch({
+      selectedDashboardTemplate: 'compact',
+    });
+
+    const result = applyConfigPatch(defaultAppConfig, patch);
+
+    expect(result.selectedDashboardTemplate).toBe('compact');
+  });
+
+  it('normalizes stored config without a dashboard template selection', () => {
+    const storedConfig: Record<string, unknown> = { ...defaultAppConfig };
+    delete storedConfig.selectedDashboardTemplate;
+
+    const result = normalizeStoredConfig(storedConfig);
+
+    expect(result.selectedDashboardTemplate).toBe('default');
+  });
+
+  it('normalizes removed dashboard template selections to default', () => {
+    const result = normalizeStoredConfig({
+      ...defaultAppConfig,
+      selectedDashboardTemplate: 'compact-command',
+    });
+
+    expect(result.selectedDashboardTemplate).toBe('default');
+  });
+});

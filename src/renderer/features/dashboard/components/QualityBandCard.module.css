@@ -1,0 +1,105 @@
+.card {
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+  min-width: 0;
+  padding: 16px;
+  border: 1px solid var(--color-border, oklch(90% 0.008 250));
+  border-radius: 12px;
+  background: color-mix(in oklch, var(--color-surface, oklch(100% 0 0)) 96%, var(--color-bg, oklch(98.5% 0.004 250)));
+}
+
+.header {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  min-width: 0;
+}
+
+.label {
+  font-size: 12px;
+  color: var(--color-muted, oklch(52% 0.018 250));
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.value {
+  display: inline-flex;
+  align-items: baseline;
+  font-family: var(--font-mono, 'JetBrains Mono', 'SFMono-Regular', Consolas, ui-monospace, monospace);
+  font-size: 28px;
+  line-height: 1;
+  font-weight: 780;
+  font-variant-numeric: tabular-nums;
+  letter-spacing: -0.025em;
+}
+
+.unit {
+  margin-left: 4px;
+  color: var(--color-muted, oklch(52% 0.018 250));
+  font-size: 13px;
+}
+
+.bandContainer {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  min-width: 0;
+}
+
+.band {
+  position: relative;
+  height: 54px;
+  border: 1px solid var(--color-border, oklch(90% 0.008 250));
+  border-radius: 10px;
+  background: linear-gradient(
+    90deg,
+    color-mix(in oklch, var(--color-warning, oklch(74% 0.16 78)) 18%, transparent),
+    color-mix(in oklch, var(--color-ok, oklch(58% 0.15 165)) 18%, transparent) 25%,
+    color-mix(in oklch, var(--color-ok, oklch(58% 0.15 165)) 18%, transparent) 75%,
+    color-mix(in oklch, var(--color-warning, oklch(74% 0.16 78)) 18%, transparent)
+  );
+}
+
+.needle {
+  position: absolute;
+  top: -6px;
+  bottom: -6px;
+  width: 3px;
+  border-radius: 999px;
+  background: var(--color-fg, oklch(22% 0.018 250));
+  transition: left 0.3s ease;
+}
+
+.needle[data-out-of-range='true'] {
+  background: var(--color-error, oklch(65% 0.22 25));
+}
+
+.labels {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 8px;
+  color: var(--color-text, oklch(22% 0.018 250));
+  font-size: 12px;
+  line-height: 1.2;
+  font-variant-numeric: tabular-nums;
+}
+
+.labelMin {
+  text-align: left;
+}
+
+.labelNominal {
+  text-align: center;
+}
+
+.labelMax {
+  text-align: right;
+}
+
+.hint {
+  margin-top: 10px;
+  font-size: 13px;
+  color: var(--color-muted, oklch(52% 0.018 250));
+}

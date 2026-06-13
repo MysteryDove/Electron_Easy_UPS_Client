@@ -2,7 +2,7 @@ import { NavLink, useLocation } from 'react-router-dom';
 import React, { useState } from 'react';
 import type { ReactNode } from 'react';
 import { useTranslation } from 'react-i18next';
-import { useConnection } from '../app/providers';
+import { useConnection, useAppConfig } from '../app/providers';
 import {
     LayoutDashboard,
     Activity,
@@ -14,6 +14,7 @@ import {
     PanelRightOpen,
 } from 'lucide-react';
 import { UiButton } from './ui';
+import { TemplateSelector } from '../features/dashboard';
 
 const MAIN_NAV_ITEMS = [
     { to: '/dashboard', labelKey: 'appShell.navDashboard', icon: <LayoutDashboard size={20} /> },
@@ -28,8 +29,12 @@ const FOOTER_NAV_ITEMS = [
 export function AppShell({ children }: { children: ReactNode }) {
     const { t } = useTranslation();
     const { state } = useConnection();
+    const { config } = useAppConfig();
     const [isCollapsed, setIsCollapsed] = useState(false);
     const location = useLocation();
+
+    const isDashboardPage = location.pathname === '/dashboard';
+    const activeTemplateId = config?.selectedDashboardTemplate ?? 'default';
 
     return (
         <div className="app-shell">
@@ -63,6 +68,13 @@ export function AppShell({ children }: { children: ReactNode }) {
                         </NavLink>
                     ))}
                 </nav>
+
+                {/* Template selector - only visible on dashboard page */}
+                {isDashboardPage && !isCollapsed && (
+                    <div className="sidebar-template-selector">
+                        <TemplateSelector activeTemplateId={activeTemplateId} />
+                    </div>
+                )}
 
                 <div className="sidebar-footer">
                     <nav className="sidebar-footer-nav">

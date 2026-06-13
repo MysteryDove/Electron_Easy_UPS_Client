@@ -74,7 +74,9 @@
         "modifierHighBattery": "Bateria alta",
         "modifierOverload": "Sobrecarga",
         "modifierBypass": "Bypass",
-        "modifierStale": "Dados desatualizados"
+        "modifierStale": "Dados desatualizados",
+        "templateSelectorLabel": "Modelo do painel",
+        "templateChangeFailed": "Failed to change dashboard template. Please try again."
     },
     "telemetry": {
         "title": "Histórico de telemetria",

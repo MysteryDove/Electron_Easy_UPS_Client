@@ -1,0 +1,24 @@
+.template {
+  display: flex;
+  flex-direction: column;
+  gap: 18px;
+}
+
+.qualityGrid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 14px;
+}
+
+.miniGrid {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: 14px;
+}
+
+@media (max-width: 900px) {
+  .qualityGrid,
+  .miniGrid {
+    grid-template-columns: 1fr;
+  }
+}

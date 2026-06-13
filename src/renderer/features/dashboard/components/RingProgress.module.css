@@ -1,0 +1,42 @@
+.container {
+  position: relative;
+  display: grid;
+  place-items: center;
+  border-radius: 50%;
+  background: conic-gradient(
+    var(--ring-color, var(--color-accent, oklch(58% 0.15 165))) var(--ring-percentage, 0%),
+    color-mix(in oklch, var(--color-border, oklch(90% 0.008 250)) 80%, transparent) 0
+  );
+}
+
+.container::before {
+  content: "";
+  position: absolute;
+  inset: 12px;
+  border-radius: inherit;
+  background: var(--color-surface, oklch(100% 0 0));
+}
+
+.content {
+  position: relative;
+  display: grid;
+  place-items: center;
+  text-align: center;
+  z-index: 1;
+}
+
+.percentage {
+  font-family: var(--font-mono, 'JetBrains Mono', 'SFMono-Regular', Consolas, ui-monospace, monospace);
+  font-size: 28px;
+  font-weight: 800;
+  line-height: 1;
+  font-variant-numeric: tabular-nums;
+  letter-spacing: -0.025em;
+}
+
+.label {
+  margin-top: 4px;
+  font-size: 12px;
+  color: var(--color-muted, oklch(52% 0.018 250));
+}
+

@@ -74,7 +74,9 @@
         "modifierHighBattery": "แบตเตอรี่เต็ม",
         "modifierOverload": "โหลดเกิน",
         "modifierBypass": "Bypass",
-        "modifierStale": "ข้อมูลเก่า"
+        "modifierStale": "ข้อมูลเก่า",
+        "templateSelectorLabel": "เทมเพลตแดชบอร์ด",
+        "templateChangeFailed": "Failed to change dashboard template. Please try again."
     },
     "telemetry": {
         "title": "ประวัติเทเลเมทรี",
