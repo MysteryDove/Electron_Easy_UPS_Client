@@ -4,7 +4,7 @@ import { cleanup, render, screen } from '@testing-library/react';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { TemplateErrorBoundary } from './TemplateErrorBoundary';
 
-function ThrowingChild() {
+function ThrowingChild(): never {
   throw new Error('template exploded');
 }
 

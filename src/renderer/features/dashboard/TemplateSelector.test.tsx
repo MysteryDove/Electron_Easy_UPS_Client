@@ -36,7 +36,7 @@ vi.mock('./registry', () => ({
           name: 'dashboard.templateDefault',
           description: 'dashboard.templateDefaultDesc',
         },
-        Component: () => null,
+        Component: (): null => null,
       },
       {
         metadata: {
@@ -44,7 +44,7 @@ vi.mock('./registry', () => ({
           name: 'dashboard.templatePowerQuality',
           description: 'dashboard.templatePowerQualityDesc',
         },
-        Component: () => null,
+        Component: (): null => null,
       },
     ],
   },

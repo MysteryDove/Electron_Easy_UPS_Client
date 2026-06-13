@@ -25,10 +25,10 @@ vi.mock('../DashboardDataProvider', () => ({
 }));
 
 vi.mock('../../../../shared/upsStatus/statusModel', () => ({
-  parseUpsStatusTokens: () => [],
+  parseUpsStatusTokens: (): string[] => [],
   deriveUpsBannerState: () => ({
     primary: 'online',
-    modifiers: [],
+    modifiers: [] as string[],
     severity: 'ok',
   }),
 }));
