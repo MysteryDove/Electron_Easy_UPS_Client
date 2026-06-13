@@ -4,6 +4,7 @@ import { useTranslation } from 'react-i18next';
 import { electronApi } from '../../app/electronApi';
 import { useAppConfig } from '../../app/providers';
 import { UiSelect } from '../../components/ui';
+import { InlineErrorMessage } from '../../components/InlineErrorMessage';
 import { templateRegistry } from './registry';
 
 type TemplateSelectorProps = {
@@ -14,6 +15,7 @@ export function TemplateSelector({ activeTemplateId }: TemplateSelectorProps) {
   const { t } = useTranslation();
   const { refreshConfig } = useAppConfig();
   const [isSaving, setIsSaving] = useState(false);
+  const [errorMessage, setErrorMessage] = useState<string | null>(null);
 
   const templates = templateRegistry.getAll();
   const activeTemplate =
@@ -32,18 +34,36 @@ export function TemplateSelector({ activeTemplateId }: TemplateSelectorProps) {
     }
 
     setIsSaving(true);
+    setErrorMessage(null); // Clear previous error before new attempt
 
     try {
       await electronApi.settings.update({
         selectedDashboardTemplate: nextTemplateId,
       });
       await refreshConfig();
+      // Success: errorMessage stays null
     } catch (error) {
-      console.error('Failed to update dashboard template selection', error);
-      // TODO: Show toast notification to user about the failure
+      console.error(
+        'Failed to update dashboard template selection',
+        error,
+        {
+          attemptedTemplate: nextTemplateId,
+          currentTemplate: activeTemplate.metadata.id,
+        }
+      );
+      setErrorMessage(
+        t(
+          'dashboard.templateChangeFailed',
+          'Failed to change dashboard template. Please try again.'
+        )
+      );
     } finally {
       setIsSaving(false);
     }
+  };
+
+  const handleDismissError = () => {
+    setErrorMessage(null);
   };
 
   return (
@@ -73,6 +93,12 @@ export function TemplateSelector({ activeTemplateId }: TemplateSelectorProps) {
       <p className="dashboard-template-selector-description">
         {t(activeTemplate.metadata.description)}
       </p>
+      {errorMessage && (
+        <InlineErrorMessage
+          message={errorMessage}
+          onDismiss={handleDismissError}
+        />
+      )}
     </div>
   );
 }

@@ -2109,3 +2109,43 @@ body,
     transform: none !important;
   }
 }
+
+/* Inline Error Message Component */
+.inline-error-message {
+  display: flex;
+  align-items: center;
+  gap: 0.75rem;
+  padding: 0.625rem 0.875rem;
+  margin-top: 0.5rem;
+  background: var(--color-error-bg, #fee);
+  border: 1px solid var(--color-error-border, #fcc);
+  border-radius: 4px;
+  color: var(--color-error-text, #c00);
+  font-size: 0.875rem;
+  line-height: 1.4;
+}
+
+.inline-error-message__text {
+  flex: 1;
+}
+
+.inline-error-message__dismiss {
+  flex-shrink: 0;
+  background: transparent;
+  border: none;
+  cursor: pointer;
+  color: inherit;
+  padding: 0.25rem;
+  font-size: 1.25rem;
+  line-height: 1;
+  border-radius: 2px;
+}
+
+.inline-error-message__dismiss:hover {
+  background: rgba(0, 0, 0, 0.1);
+}
+
+.inline-error-message__dismiss:focus {
+  outline: 2px solid currentColor;
+  outline-offset: 2px;
+}

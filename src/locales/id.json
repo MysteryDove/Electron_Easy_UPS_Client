@@ -75,7 +75,8 @@
         "modifierOverload": "Beban Lebih",
         "modifierBypass": "Bypass",
         "modifierStale": "Data basi",
-        "templateSelectorLabel": "Template dasbor"
+        "templateSelectorLabel": "Template dasbor",
+        "templateChangeFailed": "Failed to change dashboard template. Please try again."
     },
     "telemetry": {
         "title": "Riwayat Telemetri",

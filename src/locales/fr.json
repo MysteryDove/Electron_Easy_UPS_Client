@@ -82,6 +82,7 @@
         "templateCardOverviewDesc": "Hero card with metric grid",
         "templatePowerQuality": "Power Quality",
         "templatePowerQualityDesc": "Voltage and frequency tolerance analysis",
+        "templateChangeFailed": "Failed to change dashboard template. Please try again.",
         "templateBatteryFocus": "Battery Focus",
         "templateBatteryFocusDesc": "Battery health monitoring for maintenance",
         "templateInputUpsOutput": "Power Flow",

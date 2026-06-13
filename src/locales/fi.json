@@ -75,7 +75,8 @@
         "modifierOverload": "Ylikuorma",
         "modifierBypass": "Ohitus",
         "modifierStale": "Vanhentunut data",
-        "templateSelectorLabel": "Koontinäyttömalli"
+        "templateSelectorLabel": "Koontinäyttömalli",
+        "templateChangeFailed": "Failed to change dashboard template. Please try again."
     },
     "telemetry": {
         "title": "Telemetriahistoria",

@@ -75,7 +75,8 @@
         "modifierOverload": "過載",
         "modifierBypass": "旁路",
         "modifierStale": "資料失效",
-        "templateSelectorLabel": "儀表板模板"
+        "templateSelectorLabel": "儀表板模板",
+        "templateChangeFailed": "Failed to change dashboard template. Please try again."
     },
     "telemetry": {
         "title": "資料中心",

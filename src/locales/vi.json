@@ -75,7 +75,8 @@
         "modifierOverload": "Quá tải",
         "modifierBypass": "Bypass",
         "modifierStale": "Dữ liệu cũ",
-        "templateSelectorLabel": "Mẫu bảng điều khiển"
+        "templateSelectorLabel": "Mẫu bảng điều khiển",
+        "templateChangeFailed": "Failed to change dashboard template. Please try again."
     },
     "telemetry": {
         "title": "Lịch sử dữ liệu từ xa",

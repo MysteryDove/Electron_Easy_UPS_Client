@@ -75,7 +75,8 @@
         "modifierOverload": "과부하",
         "modifierBypass": "바이패스",
         "modifierStale": "데이터 갱신 중지",
-        "templateSelectorLabel": "대시보드 템플릿"
+        "templateSelectorLabel": "대시보드 템플릿",
+        "templateChangeFailed": "Failed to change dashboard template. Please try again."
     },
     "telemetry": {
         "title": "원격 측정 기록",

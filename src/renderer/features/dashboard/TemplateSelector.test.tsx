@@ -89,6 +89,71 @@ describe('TemplateSelector', () => {
     expect(consoleErrorSpy).toHaveBeenCalledWith(
       'Failed to update dashboard template selection',
       updateError,
+      {
+        attemptedTemplate: 'power-quality',
+        currentTemplate: 'default',
+      },
     );
+  });
+
+  it('shows inline error message when template switch fails', async () => {
+    const updateError = new Error('IPC failure');
+    mockUpdate.mockRejectedValue(updateError);
+
+    render(<TemplateSelector activeTemplateId="default" />);
+
+    const select = screen.getByRole('combobox');
+    fireEvent.change(select, { target: { value: 'power-quality' } });
+
+    await waitFor(() => {
+      expect(screen.getByRole('alert')).toHaveTextContent(
+        'Failed to change dashboard template. Please try again.',
+      );
+    });
+  });
+
+  it('dismisses error message when user clicks dismiss button', async () => {
+    const updateError = new Error('IPC failure');
+    mockUpdate.mockRejectedValue(updateError);
+
+    render(<TemplateSelector activeTemplateId="default" />);
+
+    const select = screen.getByRole('combobox');
+    fireEvent.change(select, { target: { value: 'power-quality' } });
+
+    await waitFor(() => {
+      expect(screen.getByRole('alert')).toBeInTheDocument();
+    });
+
+    const dismissButton = screen.getByLabelText('Dismiss error');
+    fireEvent.click(dismissButton);
+
+    expect(screen.queryByRole('alert')).not.toBeInTheDocument();
+  });
+
+  it('clears error message when next template switch succeeds', async () => {
+    const updateError = new Error('IPC failure');
+    mockUpdate.mockRejectedValueOnce(updateError).mockResolvedValueOnce(undefined);
+
+    render(<TemplateSelector activeTemplateId="default" />);
+
+    const select = screen.getByRole('combobox');
+
+    // First attempt fails
+    fireEvent.change(select, { target: { value: 'power-quality' } });
+
+    await waitFor(() => {
+      expect(screen.getByRole('alert')).toBeInTheDocument();
+    });
+
+    // Second attempt succeeds
+    fireEvent.change(select, { target: { value: 'power-quality' } });
+
+    await waitFor(() => {
+      expect(mockUpdate).toHaveBeenCalledTimes(2);
+    });
+
+    // Error should be cleared
+    expect(screen.queryByRole('alert')).not.toBeInTheDocument();
   });
 });
